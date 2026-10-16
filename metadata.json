@@ -1,0 +1,6 @@
+{
+  "name": "DeskPilot AI - Desktop Coding & Excel Assistant",
+  "description": "Intelligent Windows desktop productivity assistant for Visual Studio Code, Visual Studio, and Microsoft Excel with screen awareness, 9-stage guided workflows, and safe automation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

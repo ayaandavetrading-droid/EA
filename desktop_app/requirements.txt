@@ -1,0 +1,13 @@
+PySide6>=6.6.0
+google-genai>=2.4.0
+openpyxl>=3.1.2
+pillow>=10.2.0
+pytest>=8.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Windows-specific dependencies (installed automatically on Windows)
+pywinauto>=0.6.8; platform_system=="Windows"
+xlwings>=0.31.0; platform_system=="Windows"
+keyboard>=0.13.5; platform_system=="Windows"
+pywin32>=306; platform_system=="Windows"
