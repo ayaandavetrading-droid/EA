@@ -5,11 +5,15 @@ import { VSCodeWorkspace } from './components/Workspaces/VSCodeWorkspace';
 import { ExcelWorkspace } from './components/Workspaces/ExcelWorkspace';
 import { VisualStudioWorkspace } from './components/Workspaces/VisualStudioWorkspace';
 import { LiveScreenCapture } from './components/Workspaces/LiveScreenCapture';
+import { TradingChartWorkspace } from './components/Workspaces/TradingChartWorkspace';
+import { ScreenshotDropWorkspace } from './components/Workspaces/ScreenshotDropWorkspace';
+import { ProjectsRegistryWorkspace } from './components/Workspaces/ProjectsRegistryWorkspace';
 import { PythonPackageModal } from './components/PythonPackageModal';
 import {
   AutonomousStatusType,
   ExcelGridData,
   PaceMode,
+  ProjectRegistryItem,
   StepDiff,
   SupportedAppType,
   TaskHistoryItem,
@@ -79,6 +83,9 @@ export default function App() {
     if (activeApp === 'vscode') setDetectedAppName('Visual Studio Code');
     else if (activeApp === 'excel') setDetectedAppName('Microsoft Excel');
     else if (activeApp === 'visual_studio') setDetectedAppName('Visual Studio');
+    else if (activeApp === 'trading_chart') setDetectedAppName('TradingView / Chart Terminal');
+    else if (activeApp === 'screenshot_drop') setDetectedAppName('Vision OCR Drop Surface');
+    else if (activeApp === 'projects_registry') setDetectedAppName('Autonomous Project Registry');
     else if (activeApp === 'live_screen') setDetectedAppName('Live Screen Capture');
   }, [activeApp]);
 
@@ -411,6 +418,31 @@ export default function App() {
               setVsState((prev) => ({ ...prev, content, isDirty: true }))
             }
             onTriggerAnalyze={() => {}}
+          />
+        )}
+
+        {activeApp === 'trading_chart' && <TradingChartWorkspace />}
+
+        {activeApp === 'screenshot_drop' && (
+          <ScreenshotDropWorkspace
+            onStartAutonomousTask={(taskTitle, taskDesc) => {
+              setCurrentTaskTitle(taskTitle);
+              setCurrentTaskDescription(taskDesc);
+              if (!isAutonomousOn) handleToggleAutonomous();
+            }}
+          />
+        )}
+
+        {activeApp === 'projects_registry' && (
+          <ProjectsRegistryWorkspace
+            onLoadProjectIntoWorkspace={(proj) => {
+              setVscodeState((prev) => ({
+                ...prev,
+                activeResource: `${proj.name.toLowerCase().replace(/\s+/g, '_')}.py`,
+                content: `"""\nDeskPilot Autonomous Project: ${proj.name}\nLanguage: ${proj.language}\nStatus: ${proj.status}\n"""\n\ndef main():\n    print("Executing ${proj.name}...")\n\nif __name__ == '__main__':\n    main()\n`,
+              }));
+              setActiveApp('vscode');
+            }}
           />
         )}
 

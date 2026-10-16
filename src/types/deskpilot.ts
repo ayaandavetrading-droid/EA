@@ -1,8 +1,15 @@
 /**
- * Core type definitions for DeskPilot AI
+ * Core type definitions for DeskPilot AI Universal Desktop Agent
  */
 
-export type SupportedAppType = 'vscode' | 'excel' | 'visual_studio' | 'live_screen';
+export type SupportedAppType =
+  | 'vscode'
+  | 'excel'
+  | 'visual_studio'
+  | 'trading_chart'
+  | 'screenshot_drop'
+  | 'projects_registry'
+  | 'live_screen';
 
 export type PaceMode = 'swift' | 'standard' | 'deliberate';
 
@@ -40,7 +47,16 @@ export interface SuggestedTask {
   id: string;
   title: string;
   description: string;
-  category: 'Feature' | 'Bug Fix' | 'Data Cleaning' | 'Formulas' | 'Refactoring' | 'Testing' | 'Excel Modeling' | 'Reporting & Charts';
+  category:
+    | 'Feature'
+    | 'Bug Fix'
+    | 'Data Cleaning'
+    | 'Formulas'
+    | 'Refactoring'
+    | 'Testing'
+    | 'Excel Modeling'
+    | 'Reporting & Charts'
+    | 'Market Analysis';
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
   estimatedSteps: number;
 }
@@ -73,20 +89,12 @@ export interface StepDiff {
   suggestedTest?: string;
 }
 
-export interface ExcelCellData {
-  value: string | number;
-  formula?: string;
-  formatted?: string;
-  isHeader?: boolean;
-  hasError?: boolean;
-}
-
 export interface ExcelGridData {
   title: string;
   sheetName: string;
   headers: string[];
   rows: (string | number)[][];
-  formulas: Record<string, string>; // e.g. "G2": "=E2*F2"
+  formulas: Record<string, string>;
 }
 
 export interface ExecutionResult {
@@ -96,4 +104,36 @@ export interface ExecutionResult {
   executionTimeMs: number;
   success: boolean;
   diagnostics: string[];
+}
+
+export interface TradingChartAnalysis {
+  instrument: string;
+  timeframe: string;
+  current_price: number;
+  market_bias: string;
+  support_levels: number[];
+  resistance_levels: number[];
+  bullish_scenario: string;
+  bearish_scenario: string;
+  potential_setup: {
+    direction: string;
+    potential_entry: number;
+    invalidation_level: number;
+    target_levels: number[];
+    risk_reward_ratio: string;
+  };
+  uncertainties_and_news_risks: string[];
+  disclaimer: string;
+}
+
+export interface ProjectRegistryItem {
+  id: string;
+  name: string;
+  path: string;
+  language: string;
+  category: string;
+  status: string;
+  testStatus: string;
+  completedAt: string | null;
+  description: string;
 }

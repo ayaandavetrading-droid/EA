@@ -31,23 +31,34 @@ export const PythonPackageModal: React.FC<PythonPackageModalProps> = ({
     { name: 'run.py', category: 'Launcher' },
     { name: 'deskpilot/config.py', category: 'Settings' },
     { name: 'deskpilot/app_detector.py', category: 'Screen Awareness' },
+    { name: 'deskpilot/project_registry.py', category: 'SQLite Memory' },
+    { name: 'deskpilot/financial_chart_analyzer.py', category: 'Trading Vision' },
+    { name: 'deskpilot/plugins/base.py', category: 'Plugin Interface' },
+    { name: 'deskpilot/plugins/vscode_plugin.py', category: 'VS Code Plugin' },
+    { name: 'deskpilot/plugins/excel_plugin.py', category: 'Excel Plugin' },
+    { name: 'deskpilot/plugins/trading_plugin.py', category: 'Trading Plugin' },
     { name: 'deskpilot/screen_reader.py', category: 'UIA & Consent' },
     { name: 'deskpilot/excel_engine.py', category: 'Excel COM Engine' },
     { name: 'deskpilot/vscode_bridge.py', category: 'VS Code Bridge' },
     { name: 'deskpilot/task_planner.py', category: '9-Stage Planner' },
     { name: 'deskpilot/code_editor.py', category: 'Safe Diff Editor' },
     { name: 'deskpilot/automation.py', category: 'Automation & Stop' },
+    { name: 'deskpilot/autonomous_worker.py', category: 'Autonomous Worker' },
     { name: 'deskpilot/gui/floating_window.py', category: 'PySide6 Dark GUI' },
     { name: 'tests/test_app_detector.py', category: 'Unit Test' },
     { name: 'tests/test_excel_engine.py', category: 'Unit Test' },
     { name: 'tests/test_code_editor.py', category: 'Unit Test' },
     { name: 'tests/test_task_planner.py', category: 'Unit Test' },
+    { name: 'tests/test_autonomous_worker.py', category: 'Unit Test' },
+    { name: 'tests/test_project_registry.py', category: 'Unit Test' },
+    { name: 'tests/test_financial_chart_analyzer.py', category: 'Unit Test' },
+    { name: 'tests/test_plugins.py', category: 'Unit Test' },
   ];
 
   const fileSnippets: Record<string, string> = {
-    'README.md': `# DeskPilot AI - Desktop Coding & Excel Assistant
+    'README.md': `# DeskPilot AI — Autonomous Universal Desktop Agent
 
-Windows desktop productivity assistant for Visual Studio Code, Visual Studio, and Microsoft Excel.
+Real, extensible Windows desktop AI agent with single ON/OFF toggle, universal context engine, autonomous programming, Excel modeling, and financial chart interpretation.
 
 ## Quick Installation on Windows
 1. Clone or unzip package
@@ -57,7 +68,7 @@ Windows desktop productivity assistant for Visual Studio Code, Visual Studio, an
 5. set GEMINI_API_KEY=your_key
 6. python run.py
 
-All 11 unit tests verified: python -m unittest discover -s tests`,
+All 22 unit tests verified: python -m unittest discover -s tests`,
 
     'requirements.txt': `PySide6>=6.6.0
 google-genai>=2.4.0
@@ -164,7 +175,7 @@ class AppDetector:
           <div className="w-72 bg-slate-950 border-r border-slate-800 flex flex-col text-xs select-none">
             <div className="p-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800 flex items-center justify-between">
               <span>Package Files</span>
-              <span className="text-emerald-400 font-mono text-[10px]">11 Tests Passing</span>
+              <span className="text-emerald-400 font-mono text-[10px]">22 Tests Passing</span>
             </div>
 
             <div className="p-2 space-y-1 overflow-y-auto flex-1">

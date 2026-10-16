@@ -113,6 +113,72 @@ export async function requestExcelAssist(params: {
   return res.json();
 }
 
+export async function analyzeTradingChart(params: {
+  imageBase64?: string;
+  ticker?: string;
+  timeframe?: string;
+  currentPrice?: number;
+  sampleAsset?: string;
+}): Promise<any> {
+  const res = await fetch('/api/analyze-trading-chart', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to analyze trading chart');
+  }
+
+  return res.json();
+}
+
+export async function analyzeScreenshot(params: {
+  screenshotBase64: string;
+  userNotes?: string;
+}): Promise<any> {
+  const res = await fetch('/api/analyze-screenshot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to analyze screenshot');
+  }
+
+  return res.json();
+}
+
+export async function fetchProjectsRegistry(): Promise<any> {
+  const res = await fetch('/api/projects');
+  if (!res.ok) {
+    throw new Error('Failed to fetch projects registry');
+  }
+  return res.json();
+}
+
+export async function generateAutonomousProject(params: {
+  projectType: string;
+  name?: string;
+}): Promise<any> {
+  const res = await fetch('/api/generate-autonomous-project', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to generate autonomous project');
+  }
+
+  return res.json();
+}
+
 export function downloadPythonPackageUrl(): string {
   return '/api/download-package';
 }
+
