@@ -195,8 +195,85 @@ export async function updateProjectStatus(
   return res.json();
 }
 
+export async function transitionProjectState(
+  id: string,
+  state: string,
+  logMessage?: string
+): Promise<any> {
+  const res = await fetch(`/api/projects/${id}/transition`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state, logMessage }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to transition project state');
+  }
+
+  return res.json();
+}
+
+export async function updateProjectFile(
+  id: string,
+  filename: string,
+  content: string
+): Promise<any> {
+  const res = await fetch(`/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, content }),
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to save project file');
+  }
+
+  return res.json();
+}
+
+export async function restartProject(id: string): Promise<any> {
+  const res = await fetch(`/api/projects/${id}/restart`, {
+    method: 'POST',
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to restart project');
+  }
+
+  return res.json();
+}
+
+export async function archiveProject(id: string, archive = true): Promise<any> {
+  const res = await fetch(`/api/projects/${id}/archive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ archive }),
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to archive project');
+  }
+
+  return res.json();
+}
+
+export async function autoDebugProject(id: string): Promise<any> {
+  const res = await fetch(`/api/projects/${id}/auto-debug`, {
+    method: 'POST',
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to auto-debug project');
+  }
+
+  return res.json();
+}
+
 export function downloadPythonPackageUrl(): string {
   return '/api/download-package';
 }
+
 
 

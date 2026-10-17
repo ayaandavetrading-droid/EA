@@ -128,17 +128,31 @@ export interface TradingChartAnalysis {
   disclaimer: string;
 }
 
+export type ProjectLifecycleState =
+  | 'Planned'
+  | 'Creating'
+  | 'Implementing'
+  | 'Running'
+  | 'Testing'
+  | 'Debugging'
+  | 'Completed'
+  | 'Archived'
+  | 'Failed';
+
 export interface ProjectRegistryItem {
   id: string;
   name: string;
   path: string;
   language: string;
   category: string;
-  status: string;
+  status: ProjectLifecycleState | string;
   testStatus: string;
   completedAt: string | null;
   description: string;
   requirements?: string[];
   files?: { filename: string; content: string; language: string }[];
   testCommand?: string;
+  logs?: string[];
+  lastExitCode?: number;
 }
+
