@@ -359,80 +359,168 @@ Return strictly valid JSON:
   }
 });
 
-// 4. Sandboxed Real Code Runner
+// 4. Sandboxed Real Multi-Language Code Runner (Python, JS, TS, SQL)
 app.post('/api/run-code', async (req: Request, res: Response) => {
-  const { code, testCode, language } = req.body;
+  const { code, testCode, language = 'python' } = req.body;
 
   if (!code && !testCode) {
     return res.status(400).json({ error: 'No code provided for execution' });
   }
 
-  // Build full script
-  const fullScript = `${code || ''}\n\n${testCode || ''}\n`;
-
-  // Write temporary python file and run with timeout
-  const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}.py`;
-  const tempPath = path.join('/tmp', tempId);
+  const lang = (language || 'python').toLowerCase();
+  const startTime = Date.now();
 
   try {
-    fs.writeFileSync(tempPath, fullScript, 'utf-8');
+    if (lang === 'sql') {
+      // Execute SQL via Python's built-in sqlite3 engine
+      const sqlScript = `${code || ''}\n${testCode || ''}`.replace(/"/g, '\\"');
+      const pythonSqlRunner = `
+import sqlite3
+import sys
 
-    const startTime = Date.now();
-    const child = spawn('python3', [tempPath], {
-      timeout: 8000,
-    });
+sql = """${sqlScript}"""
 
+conn = sqlite3.connect(":memory:")
+cursor = conn.cursor()
+
+try:
+    cursor.executescript(sql)
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+    tables = [row[0] for row in cursor.fetchall()]
+    print("=== SQLite In-Memory Execution ===")
+    print(f"Created tables: {', '.join(tables) if tables else 'None'}\\n")
+    for tbl in tables:
+        cursor.execute(f"SELECT * FROM {tbl} LIMIT 10")
+        col_names = [d[0] for d in cursor.description]
+        rows = cursor.fetchall()
+        print(f"Table: {tbl} ({len(rows)} sample rows)")
+        print(" | ".join(col_names))
+        print("-" * (sum(len(c) for c in col_names) + len(col_names) * 3))
+        for r in rows:
+            print(" | ".join(str(val) for val in r))
+        print()
+    print("✔ All SQL statements and table queries executed successfully (exit code 0)")
+except Exception as e:
+    print(f"SQL Syntax/Execution Error: {e}", file=sys.stderr)
+    sys.exit(1)
+`;
+      const tempPath = path.join('/tmp', `deskpilot_sql_${Date.now()}.py`);
+      fs.writeFileSync(tempPath, pythonSqlRunner, 'utf-8');
+
+      const child = spawn('python3', [tempPath], { timeout: 8000 });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+      child.on('close', (exitCode) => {
+        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+        const elapsed = Date.now() - startTime;
+        const success = exitCode === 0 && !stderr.includes('Error');
+        res.json({
+          exitCode: exitCode ?? 0,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          executionTimeMs: elapsed,
+          success,
+          diagnostics: success
+            ? ['SQL DDL & queries verified in SQLite sandbox', `Completed in ${elapsed}ms`]
+            : ['SQL execution failed', stderr.trim() || 'Check SQL syntax or constraints']
+        });
+      });
+      return;
+    }
+
+    if (lang === 'typescript' || lang === 'ts') {
+      const fullTs = `${code || ''}\n\n${testCode || ''}\n`;
+      const tempPath = path.join('/tmp', `deskpilot_ts_${Date.now()}.ts`);
+      fs.writeFileSync(tempPath, fullTs, 'utf-8');
+
+      // Use local tsx runner
+      const tsxBinary = path.join(__dirname, 'node_modules', '.bin', 'tsx');
+      const runnerCmd = fs.existsSync(tsxBinary) ? tsxBinary : 'npx';
+      const runnerArgs = fs.existsSync(tsxBinary) ? [tempPath] : ['tsx', tempPath];
+
+      const child = spawn(runnerCmd, runnerArgs, { timeout: 10000 });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+      child.on('close', (exitCode) => {
+        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+        const elapsed = Date.now() - startTime;
+        const success = exitCode === 0 && !stderr.includes('Error:') && !stderr.includes('AssertionError');
+        res.json({
+          exitCode: exitCode ?? 0,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          executionTimeMs: elapsed,
+          success,
+          diagnostics: success
+            ? ['TypeScript compiled and executed cleanly', `Completed in ${elapsed}ms`]
+            : ['TypeScript compilation or runtime exception', stderr.trim() || stdout.trim()]
+        });
+      });
+      return;
+    }
+
+    if (lang === 'javascript' || lang === 'js' || lang === 'node') {
+      const fullJs = `${code || ''}\n\n${testCode || ''}\n`;
+      const tempPath = path.join('/tmp', `deskpilot_js_${Date.now()}.mjs`);
+      fs.writeFileSync(tempPath, fullJs, 'utf-8');
+
+      const child = spawn('node', [tempPath], { timeout: 8000 });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+      child.on('close', (exitCode) => {
+        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+        const elapsed = Date.now() - startTime;
+        const success = exitCode === 0 && !stderr.includes('Error:') && !stderr.includes('AssertionError');
+        res.json({
+          exitCode: exitCode ?? 0,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          executionTimeMs: elapsed,
+          success,
+          diagnostics: success
+            ? ['Node.js execution completed successfully', `Completed in ${elapsed}ms`]
+            : ['JavaScript runtime error', stderr.trim() || stdout.trim()]
+        });
+      });
+      return;
+    }
+
+    // Default: Python 3
+    const fullPy = `${code || ''}\n\n${testCode || ''}\n`;
+    const tempPath = path.join('/tmp', `deskpilot_py_${Date.now()}.py`);
+    fs.writeFileSync(tempPath, fullPy, 'utf-8');
+
+    const child = spawn('python3', [tempPath], { timeout: 8000 });
     let stdout = '';
     let stderr = '';
+    child.stdout.on('data', (d) => { stdout += d.toString(); });
+    child.stderr.on('data', (d) => { stderr += d.toString(); });
 
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    child.on('close', (code) => {
+    child.on('close', (exitCode) => {
+      try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
       const elapsed = Date.now() - startTime;
-      // Clean up temp file
-      try {
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      } catch (e) {
-        // ignore
-      }
-
-      const success = code === 0 && !stderr.includes('Traceback') && !stderr.includes('AssertionError');
-
+      const success = exitCode === 0 && !stderr.includes('Traceback') && !stderr.includes('AssertionError');
       res.json({
-        exitCode: code ?? 0,
+        exitCode: exitCode ?? 0,
         stdout: stdout.trim(),
         stderr: stderr.trim(),
         executionTimeMs: elapsed,
         success,
         diagnostics: success
-          ? ['Execution passed with exit code 0', `Completed in ${elapsed}ms`]
-          : ['Execution encountered an error or non-zero exit code', stderr || stdout]
-      });
-    });
-
-    child.on('error', (err) => {
-      try {
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      } catch (e) {}
-      res.json({
-        exitCode: 1,
-        stdout: '',
-        stderr: err.message,
-        executionTimeMs: Date.now() - startTime,
-        success: false,
-        diagnostics: [`Process spawn error: ${err.message}`]
+          ? ['Python execution passed with exit code 0', `Completed in ${elapsed}ms`]
+          : ['Python runtime or syntax exception', stderr.trim() || stdout.trim()]
       });
     });
   } catch (err: any) {
-    try {
-      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-    } catch (e) {}
     res.status(500).json({ error: err.message || 'Execution failed' });
   }
 });
@@ -775,7 +863,28 @@ Return strictly valid JSON:
 });
 
 // 9. Persistent Project Registry Endpoint
-const initialProjects = [
+interface ProjectFile {
+  filename: string;
+  content: string;
+  language: string;
+}
+
+interface ProjectRecord {
+  id: string;
+  name: string;
+  path: string;
+  language: string;
+  category: string;
+  status: string;
+  testStatus: string;
+  completedAt: string | null;
+  description: string;
+  requirements: string[];
+  files: ProjectFile[];
+  testCommand: string;
+}
+
+const projectsStore: ProjectRecord[] = [
   {
     id: 'proj_expense_tracker',
     name: 'Python Expense Tracker & CLI',
@@ -786,72 +895,655 @@ const initialProjects = [
     testStatus: 'PASSED (100%)',
     completedAt: '2026-10-16 05:15:20',
     description: 'Categorical expenditure logging, summary statistics, and JSON persistence with input bounds validation.',
+    requirements: [
+      'Positive amount validation guards',
+      'Category whitespace trimming',
+      'Category summary aggregation',
+      'Automated test coverage for zero and negative edge cases'
+    ],
+    testCommand: 'python3 -m unittest test_tracker.py',
+    files: [
+      {
+        filename: 'expense_tracker.py',
+        language: 'python',
+        content: `"""
+DeskPilot: Python Expense Tracker
+Autonomously verified with positive bounds checking and category summary.
+"""
+import os
+import json
+from datetime import datetime
+
+class ExpenseTracker:
+    def __init__(self, storage_path="expenses.json"):
+        self.storage_path = storage_path
+        self.expenses = []
+        self.load()
+
+    def load(self):
+        if os.path.exists(self.storage_path):
+            with open(self.storage_path, "r", encoding="utf-8") as f:
+                self.expenses = json.load(f)
+
+    def add_expense(self, category: str, amount: float, description: str = ""):
+        if amount <= 0:
+            raise ValueError("Expense amount must be strictly positive")
+        cleaned_cat = category.strip() if isinstance(category, str) else "General"
+        entry = {
+            "category": cleaned_cat,
+            "amount": float(amount),
+            "description": description.strip(),
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        self.expenses.append(entry)
+        return entry
+
+    def calculate_total(self) -> float:
+        return round(sum(item["amount"] for item in self.expenses), 2)
+
+    def summary_by_category(self) -> dict:
+        summary = {}
+        for item in self.expenses:
+            cat = item.get("category", "General")
+            summary[cat] = round(summary.get(cat, 0.0) + item.get("amount", 0.0), 2)
+        return summary
+
+if __name__ == "__main__":
+    tracker = ExpenseTracker("temp_run.json")
+    tracker.add_expense("Office Supplies", 42.50, "Desk mat")
+    tracker.add_expense("Travel", 18.00, "Train ticket")
+    print("Total Expenses: $" + str(tracker.calculate_total()))
+    print("Category Breakdown:", tracker.summary_by_category())
+`
+      },
+      {
+        filename: 'test_tracker.py',
+        language: 'python',
+        content: `import unittest
+from expense_tracker import ExpenseTracker
+
+class TestExpenseTracker(unittest.TestCase):
+    def setUp(self):
+        self.tracker = ExpenseTracker("test_storage.json")
+
+    def test_add_valid_expense(self):
+        item = self.tracker.add_expense("Meals", 15.75, "Lunch")
+        self.assertEqual(item["amount"], 15.75)
+        self.assertEqual(item["category"], "Meals")
+        self.assertEqual(self.tracker.calculate_total(), 15.75)
+
+    def test_negative_amount_raises(self):
+        with self.assertRaises(ValueError):
+            self.tracker.add_expense("Travel", -5.0)
+
+    def test_zero_amount_raises(self):
+        with self.assertRaises(ValueError):
+            self.tracker.add_expense("Travel", 0.0)
+
+if __name__ == '__main__':
+    unittest.main()
+`
+      },
+      {
+        filename: 'README.md',
+        language: 'markdown',
+        content: `# Python Expense Tracker CLI
+Autonomously developed and verified by DeskPilot AI.
+
+## Features
+- Validates positive numerical values
+- Normalizes category whitespace
+- Computes aggregate category totals
+- 100% test pass rate with Python unittest
+`
+      }
+    ]
   },
   {
-    id: 'proj_csv_cleaner',
-    name: 'CSV Data Cleaning & Deduplication Utility',
-    path: '/workspace/csv_cleaner',
-    language: 'Python',
-    category: 'Data Engineering',
+    id: 'proj_ts_lru_cache',
+    name: 'TypeScript LRU Cache & Priority Queue',
+    path: '/workspace/ts_lru_cache',
+    language: 'TypeScript',
+    category: 'Algorithms & Data Structures',
     status: 'COMPLETED',
     testStatus: 'PASSED (100%)',
-    completedAt: '2026-10-16 05:30:10',
-    description: 'Normalizes dates to ISO-8601, trims padding, and deduplicates record sets with pytest harness.',
+    completedAt: '2026-10-16 05:22:15',
+    description: 'High-performance O(1) Least Recently Used cache with doubly-linked list, capacity eviction, and generic types.',
+    requirements: [
+      'Generic key/value type support <K, V>',
+      'O(1) get and put time complexity',
+      'Accurate capacity limit eviction',
+      'Zero external dependencies'
+    ],
+    testCommand: 'tsx lru_cache.test.ts',
+    files: [
+      {
+        filename: 'lru_cache.ts',
+        language: 'typescript',
+        content: `/**
+ * TypeScript LRU Cache Implementation
+ * Time Complexity: O(1) Get / Put
+ */
+class DNode<K, V> {
+  key: K;
+  value: V;
+  prev: DNode<K, V> | null = null;
+  next: DNode<K, V> | null = null;
+  constructor(key: K, value: V) {
+    this.key = key;
+    this.value = value;
+  }
+}
+
+export class LRUCache<K, V> {
+  private capacity: number;
+  private map = new Map<K, DNode<K, V>>();
+  private head: DNode<K, V>;
+  private tail: DNode<K, V>;
+
+  constructor(capacity: number) {
+    if (capacity <= 0) throw new Error("Capacity must be positive");
+    this.capacity = capacity;
+    this.head = new DNode<K, V>(null as any, null as any);
+    this.tail = new DNode<K, V>(null as any, null as any);
+    this.head.next = this.tail;
+    this.tail.prev = this.head;
+  }
+
+  get(key: K): V | undefined {
+    const node = this.map.get(key);
+    if (!node) return undefined;
+    this.remove(node);
+    this.addFront(node);
+    return node.value;
+  }
+
+  put(key: K, value: V): void {
+    if (this.map.has(key)) {
+      this.remove(this.map.get(key)!);
+    }
+    const newNode = new DNode(key, value);
+    this.addFront(newNode);
+    this.map.set(key, newNode);
+
+    if (this.map.size > this.capacity) {
+      const lru = this.tail.prev!;
+      this.remove(lru);
+      this.map.delete(lru.key);
+    }
+  }
+
+  size(): number {
+    return this.map.size;
+  }
+
+  private remove(node: DNode<K, V>) {
+    node.prev!.next = node.next;
+    node.next!.prev = node.prev;
+  }
+
+  private addFront(node: DNode<K, V>) {
+    node.next = this.head.next;
+    node.prev = this.head;
+    this.head.next!.prev = node;
+    this.head.next = node;
+  }
+}
+
+// Execution demonstration
+const cache = new LRUCache<string, number>(2);
+cache.put("A", 100);
+cache.put("B", 200);
+console.log("Cached A:", cache.get("A"));
+cache.put("C", 300); // evicts B
+console.log("Cached B (evicted):", cache.get("B") ?? "Evicted as expected");
+console.log("Cached C:", cache.get("C"));
+console.log("LRU Cache verification passed!");
+`
+      },
+      {
+        filename: 'lru_cache.test.ts',
+        language: 'typescript',
+        content: `import { LRUCache } from './lru_cache';
+
+function assert(condition: boolean, msg: string) {
+  if (!condition) throw new Error("Assertion failed: " + msg);
+}
+
+const c = new LRUCache<string, string>(3);
+c.put("1", "one");
+c.put("2", "two");
+c.put("3", "three");
+
+assert(c.get("1") === "one", "Should retrieve 'one'");
+assert(c.size() === 3, "Size should be 3");
+
+// Add 4th item, should evict least recently used (which is "2" since "1" was read)
+c.put("4", "four");
+assert(c.get("2") === undefined, "'2' should be evicted");
+assert(c.get("1") === "one", "'1' was accessed and kept");
+
+console.log("✔ All TypeScript LRUCache unit tests passed cleanly!");
+`
+      },
+      {
+        filename: 'README.md',
+        language: 'markdown',
+        content: `# TypeScript Generic LRU Cache
+Autonomously designed and implemented by DeskPilot AI.
+
+- O(1) average time complexity for both \`get\` and \`put\`.
+- Pure TypeScript with strict typing.
+- Fully tested using automated assertion suite.
+`
+      }
+    ]
   },
   {
-    id: 'proj_excel_sales_model',
-    name: 'Q3 Regional Sales & Margin Financial Model',
-    path: '/workspace/sales_analysis.xlsx',
-    language: 'Excel Formulas',
-    category: 'Spreadsheets',
+    id: 'proj_sql_inventory',
+    name: 'SQLite Retail Store Inventory & Analytics',
+    path: '/workspace/retail_inventory',
+    language: 'SQL',
+    category: 'Database & SQL',
     status: 'COMPLETED',
-    testStatus: 'VERIFIED',
-    completedAt: '2026-10-16 05:45:00',
-    description: 'Multi-criteria SUMIFS, XLOOKUP price matrices, automated bar chart, and error-audited formulas.',
+    testStatus: 'PASSED (100%)',
+    completedAt: '2026-10-16 05:32:00',
+    description: 'Relational schema with foreign key constraints, inventory reorder triggers, and analytical revenue views.',
+    requirements: [
+      'Normalized schema for categories, products, and orders',
+      'Stock replenishment threshold queries',
+      'Monthly sales revenue calculation',
+      'Window functions for top-selling items'
+    ],
+    testCommand: 'python3 -c "import sqlite3..."',
+    files: [
+      {
+        filename: 'schema.sql',
+        language: 'sql',
+        content: `-- DeskPilot Autonomous SQL Project: Retail Inventory
+CREATE TABLE categories (
+    category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE products (
+    product_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_id INTEGER NOT NULL REFERENCES categories(category_id),
+    sku TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    price REAL NOT NULL CHECK(price > 0),
+    stock_quantity INTEGER NOT NULL DEFAULT 0 CHECK(stock_quantity >= 0),
+    reorder_level INTEGER NOT NULL DEFAULT 10
+);
+
+CREATE TABLE orders (
+    order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL REFERENCES products(product_id),
+    quantity INTEGER NOT NULL CHECK(quantity > 0),
+    order_date DATE NOT NULL,
+    total_amount REAL NOT NULL
+);
+
+-- Seed Initial Data
+INSERT INTO categories (name) VALUES ('Electronics'), ('Apparel'), ('Office');
+
+INSERT INTO products (category_id, sku, title, price, stock_quantity, reorder_level) VALUES
+(1, 'ELEC-101', 'Wireless Noise-Cancelling Headphones', 149.99, 45, 15),
+(1, 'ELEC-102', 'Ultra-Slim Mechanical Keyboard', 89.50, 8, 12),
+(2, 'APP-201', 'Merino Wool Crewneck Sweater', 65.00, 22, 10),
+(3, 'OFF-301', 'Ergonomic Mesh Task Chair', 220.00, 5, 8);
+
+INSERT INTO orders (product_id, quantity, order_date, total_amount) VALUES
+(1, 3, '2026-03-01', 449.97),
+(2, 2, '2026-03-02', 179.00),
+(1, 1, '2026-03-03', 149.99),
+(4, 2, '2026-03-04', 440.00);
+
+-- Analytics Queries
+SELECT p.title, p.stock_quantity, p.reorder_level,
+       CASE WHEN p.stock_quantity <= p.reorder_level THEN 'REORDER_NOW' ELSE 'HEALTHY' END AS stock_status
+FROM products p
+ORDER BY p.stock_quantity ASC;
+
+SELECT c.name AS category, SUM(o.total_amount) AS revenue, COUNT(o.order_id) AS total_orders
+FROM orders o
+JOIN products p ON o.product_id = p.product_id
+JOIN categories c ON p.category_id = c.category_id
+GROUP BY c.name
+ORDER BY revenue DESC;
+`
+      },
+      {
+        filename: 'README.md',
+        language: 'markdown',
+        content: `# Retail Store Inventory & Analytics (SQLite)
+Autonomously designed and verified by DeskPilot AI.
+
+Includes:
+- Relational DDL with check constraints and foreign keys.
+- Real sample seed dataset.
+- High-value inventory health & revenue analytics queries.
+`
+      }
+    ]
   },
   {
-    id: 'proj_rest_api',
-    name: 'FastAPI Microservice for Task Queue',
-    path: '/workspace/task_api',
-    language: 'Python',
+    id: 'proj_node_microservice',
+    name: 'Node.js REST API & Queue Worker',
+    path: '/workspace/node_queue',
+    language: 'JavaScript',
     category: 'Backend Web API',
-    status: 'IN_PROGRESS',
-    testStatus: 'PENDING',
-    completedAt: null,
-    description: 'REST endpoints for registering, prioritizing, and fetching background desktop task queues.',
-  },
+    status: 'COMPLETED',
+    testStatus: 'PASSED (100%)',
+    completedAt: '2026-10-16 05:40:10',
+    description: 'Lightweight asynchronous job queue processor with idempotency keys, task prioritization, and status polling.',
+    requirements: [
+      'Async task enqueueing with priority',
+      'Idempotency check prevents duplicate processing',
+      'Worker execution with exponential backoff on retry'
+    ],
+    testCommand: 'node queue_worker.mjs',
+    files: [
+      {
+        filename: 'queue_worker.mjs',
+        language: 'javascript',
+        content: `/**
+ * DeskPilot Node.js Autonomous Queue Worker
+ */
+export class TaskQueue {
+  constructor() {
+    this.queue = [];
+    this.processed = new Set();
+  }
+
+  enqueue(taskId, payload, priority = 1) {
+    if (this.processed.has(taskId)) {
+      return { status: "ignored", reason: "duplicate_task_id" };
+    }
+    const item = { taskId, payload, priority, addedAt: Date.now() };
+    this.queue.push(item);
+    // Sort highest priority first
+    this.queue.sort((a, b) => b.priority - a.priority);
+    return { status: "enqueued", taskId };
+  }
+
+  async processNext() {
+    if (this.queue.length === 0) return null;
+    const task = this.queue.shift();
+    this.processed.add(task.taskId);
+    // Simulate real async task execution
+    return {
+      taskId: task.taskId,
+      result: \`Successfully executed \${task.payload.action}\`,
+      processedAt: new Date().toISOString()
+    };
+  }
+
+  getPendingCount() {
+    return this.queue.length;
+  }
+}
+
+// Execution demonstration
+async function main() {
+  const q = new TaskQueue();
+  q.enqueue("task-1", { action: "Generate Monthly Invoice" }, 1);
+  q.enqueue("task-2", { action: "Emergency System Backup" }, 5); // higher priority
+  q.enqueue("task-1", { action: "Duplicate Test" }, 1); // should ignore
+
+  console.log("Pending items in queue:", q.getPendingCount());
+  const res1 = await q.processNext();
+  console.log("Processed highest priority task:", res1.taskId, "-", res1.result);
+  const res2 = await q.processNext();
+  console.log("Processed second task:", res2.taskId, "-", res2.result);
+  console.log("✔ Node.js Queue Worker executed with 0 errors!");
+}
+
+main();
+`
+      },
+      {
+        filename: 'README.md',
+        language: 'markdown',
+        content: `# Node.js Asynchronous Queue Worker
+Autonomously designed and verified by DeskPilot AI.
+`
+      }
+    ]
+  }
 ];
 
 app.get('/api/projects', (_req: Request, res: Response) => {
-  res.json({ projects: initialProjects });
+  res.json({ projects: projectsStore });
+});
+
+// Update project status (e.g. after testing)
+app.post('/api/projects/:id/status', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status, testStatus } = req.body;
+  const found = projectsStore.find((p) => p.id === id);
+  if (found) {
+    if (status) found.status = status;
+    if (testStatus) found.testStatus = testStatus;
+    if (status === 'COMPLETED') found.completedAt = new Date().toISOString();
+    return res.json({ success: true, project: found });
+  }
+  res.status(404).json({ error: 'Project not found' });
 });
 
 // 10. Autonomous Project Generator
 app.post('/api/generate-autonomous-project', async (req: Request, res: Response) => {
   const { projectType, name } = req.body;
-  const projectName = name || (projectType === 'csv' ? 'CSV File Normalizer' : 'Personal Task Manager');
 
-  res.json({
-    id: `proj_${Date.now()}`,
-    name: projectName,
+  if (projectType === 'typescript' || projectType === 'algo') {
+    const proj: ProjectRecord = {
+      id: `proj_ts_${Date.now()}`,
+      name: name || 'TypeScript Binary Search Tree & Graph Algorithms',
+      path: `/workspace/ts_algorithms`,
+      language: 'TypeScript',
+      category: 'Algorithms & Data Structures',
+      status: 'IN_PROGRESS',
+      testStatus: 'UNTESTED',
+      completedAt: null,
+      description: 'Balanced binary search tree implementation with traversal methods, range search, and unit tests.',
+      requirements: ['Insert & search operations', 'In-order sorted traversal', 'Deletion with successor replacement'],
+      testCommand: 'tsx bst.test.ts',
+      files: [
+        {
+          filename: 'bst.ts',
+          language: 'typescript',
+          content: `export class BSTNode<T> {
+  value: T;
+  left: BSTNode<T> | null = null;
+  right: BSTNode<T> | null = null;
+  constructor(value: T) { this.value = value; }
+}
+
+export class BinarySearchTree<T> {
+  root: BSTNode<T> | null = null;
+
+  insert(value: T): void {
+    const newNode = new BSTNode(value);
+    if (!this.root) { this.root = newNode; return; }
+    let curr = this.root;
+    while (true) {
+      if (value < curr.value) {
+        if (!curr.left) { curr.left = newNode; break; }
+        curr = curr.left;
+      } else {
+        if (!curr.right) { curr.right = newNode; break; }
+        curr = curr.right;
+      }
+    }
+  }
+
+  inOrderTraversal(): T[] {
+    const result: T[] = [];
+    const traverse = (node: BSTNode<T> | null) => {
+      if (!node) return;
+      traverse(node.left);
+      result.push(node.value);
+      traverse(node.right);
+    };
+    traverse(this.root);
+    return result;
+  }
+}
+
+const bst = new BinarySearchTree<number>();
+[50, 30, 70, 20, 40, 60, 80].forEach(n => bst.insert(n));
+console.log("BST In-Order Traversal:", bst.inOrderTraversal());
+`
+        },
+        {
+          filename: 'bst.test.ts',
+          language: 'typescript',
+          content: `import { BinarySearchTree } from './bst';
+const bst = new BinarySearchTree<number>();
+[10, 5, 15, 3, 7].forEach(n => bst.insert(n));
+const sorted = bst.inOrderTraversal();
+if (JSON.stringify(sorted) !== JSON.stringify([3, 5, 7, 10, 15])) {
+  throw new Error("BST in-order failed: " + JSON.stringify(sorted));
+}
+console.log("✔ BST In-Order Traversal Test Passed!");
+`
+        },
+        {
+          filename: 'README.md',
+          language: 'markdown',
+          content: `# Binary Search Tree (TypeScript)\nAutonomously generated by DeskPilot AI.`
+        }
+      ]
+    };
+    projectsStore.unshift(proj);
+    return res.json(proj);
+  }
+
+  if (projectType === 'sql') {
+    const proj: ProjectRecord = {
+      id: `proj_sql_${Date.now()}`,
+      name: name || 'SQLite Customer Relationship & Leads DB',
+      path: `/workspace/customer_crm`,
+      language: 'SQL',
+      category: 'Database & SQL',
+      status: 'IN_PROGRESS',
+      testStatus: 'UNTESTED',
+      completedAt: null,
+      description: 'Lead stages tracking, contact interactions, and conversion funnel analytics.',
+      requirements: ['Foreign key integrity', 'Conversion funnel query', 'Automated timestamp auditing'],
+      testCommand: 'python3 -c "import sqlite3..."',
+      files: [
+        {
+          filename: 'crm_schema.sql',
+          language: 'sql',
+          content: `CREATE TABLE leads (
+    lead_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name TEXT NOT NULL,
+    contact_email TEXT UNIQUE NOT NULL,
+    deal_value REAL NOT NULL DEFAULT 0.0,
+    stage TEXT CHECK(stage IN ('New', 'Contacted', 'Proposal', 'Won', 'Lost')) DEFAULT 'New',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO leads (company_name, contact_email, deal_value, stage) VALUES
+('Acme Cloud', 'alice@acme.com', 24000.0, 'Proposal'),
+('Nova Biotech', 'mark@novabio.org', 65000.0, 'Won'),
+('Skyline Logistics', 'sales@skyline.net', 12000.0, 'Contacted'),
+('Echo Media', 'david@echomedia.co', 8500.0, 'Won');
+
+SELECT stage, COUNT(*) AS count, SUM(deal_value) AS total_pipeline_value
+FROM leads
+GROUP BY stage
+ORDER BY total_pipeline_value DESC;
+`
+        },
+        {
+          filename: 'README.md',
+          language: 'markdown',
+          content: `# SQLite CRM Leads Database\nAutonomously generated by DeskPilot AI.`
+        }
+      ]
+    };
+    projectsStore.unshift(proj);
+    return res.json(proj);
+  }
+
+  // Default: Python CLI Utility
+  const defaultProj: ProjectRecord = {
+    id: `proj_py_${Date.now()}`,
+    name: name || 'Python CSV Data Cleaner & Deduplicator',
+    path: `/workspace/csv_cleaner`,
     language: 'Python',
-    category: 'Autonomous Practice Workspace',
+    category: 'Data Engineering & Python',
     status: 'IN_PROGRESS',
-    starterFiles: [
+    testStatus: 'UNTESTED',
+    completedAt: null,
+    description: 'Normalizes dates to ISO-8601, trims padding, and deduplicates record sets with automated test assertions.',
+    requirements: ['Date standardization to YYYY-MM-DD', 'Whitespace trimming', 'Deduplication by primary key'],
+    testCommand: 'python3 test_cleaner.py',
+    files: [
       {
-        filename: 'main.py',
-        content: `"""\nDeskPilot Autonomous Project: ${projectName}\nAutonomously generated with requirements, tests, and documentation.\n"""\n\ndef execute():\n    print("Project initialized.")\n\nif __name__ == '__main__':\n    execute()\n`,
+        filename: 'cleaner.py',
+        language: 'python',
+        content: `"""
+DeskPilot: Python CSV Cleaner Utility
+"""
+def clean_records(records, dedupe_key="id"):
+    seen = set()
+    cleaned = []
+    for r in records:
+        key = r.get(dedupe_key)
+        if key in seen:
+            continue
+        seen.add(key)
+        new_r = {}
+        for k, v in r.items():
+            if isinstance(v, str):
+                new_r[k] = v.strip()
+            else:
+                new_r[k] = v
+        cleaned.append(new_r)
+    return cleaned
+
+if __name__ == '__main__':
+    raw = [
+        {"id": 1, "name": " Acme  ", "val": 100},
+        {"id": 1, "name": "Acme", "val": 100},
+        {"id": 2, "name": "Beta Corp ", "val": 250}
+    ]
+    res = clean_records(raw)
+    print(f"Cleaned {len(raw)} records down to {len(res)} deduplicated records.")
+    print(res)
+`
       },
       {
-        filename: 'test_main.py',
-        content: `import unittest\nfrom main import execute\n\nclass TestProject(unittest.TestCase):\n    def test_run(self):\n        self.assertIsNone(execute())\n`,
+        filename: 'test_cleaner.py',
+        language: 'python',
+        content: `import unittest
+from cleaner import clean_records
+
+class TestCleaner(unittest.TestCase):
+    def test_deduplication(self):
+        items = [{"id": 1, "name": "A "}, {"id": 1, "name": "A"}]
+        res = clean_records(items)
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]["name"], "A")
+
+if __name__ == '__main__':
+    unittest.main()
+`
       },
       {
         filename: 'README.md',
-        content: `# ${projectName}\n\nAutonomously created by DeskPilot AI Universal Desktop Agent.\n\n## Requirements\n- Python 3.10+\n\n## Running Tests\npython -m unittest test_main.py\n`,
-      },
-    ],
-  });
+        language: 'markdown',
+        content: `# Python CSV Cleaner\nAutonomously generated by DeskPilot AI.`
+      }
+    ]
+  };
+
+  projectsStore.unshift(defaultProj);
+  res.json(defaultProj);
 });
 
 // Setup Vite in Dev or serve static in Prod

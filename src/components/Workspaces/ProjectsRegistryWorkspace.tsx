@@ -174,15 +174,59 @@ export const ProjectsRegistryWorkspace: React.FC<ProjectsRegistryWorkspaceProps>
                       <span>Category: {proj.category}</span>
                       {proj.completedAt && <span>Completed: {proj.completedAt}</span>}
                     </div>
+
+                    {proj.requirements && proj.requirements.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1.5">
+                        {proj.requirements.map((req, i) => (
+                          <span
+                            key={i}
+                            className="px-2 py-0.5 text-[10px] bg-slate-900 border border-slate-800 text-slate-300 rounded"
+                          >
+                            ✓ {req}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="shrink-0 flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const testFile = proj.files?.find((f) => f.filename.includes('test')) || proj.files?.[0];
+                          const mainFile = proj.files?.find((f) => !f.filename.includes('test') && !f.filename.includes('README')) || proj.files?.[0];
+                          const res = await (await import('../../services/api')).runCode({
+                            code: mainFile?.content || '',
+                            testCode: testFile ? testFile.content : '',
+                            language: proj.language.toLowerCase(),
+                          });
+                          if (res.success) {
+                            await (await import('../../services/api')).updateProjectStatus(proj.id, {
+                              status: 'COMPLETED',
+                              testStatus: 'PASSED (100%)',
+                            });
+                            alert(`✔ Project "${proj.name}" tests executed successfully with exit code 0!\nOutput:\n${res.stdout || 'Passed all unit tests.'}`);
+                            loadProjects();
+                          } else {
+                            alert(`✖ Tests failed with exit code ${res.exitCode}.\n${res.stderr || res.stdout}`);
+                          }
+                        } catch (err: any) {
+                          alert(`Execution error: ${err.message}`);
+                        }
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-semibold bg-emerald-950/70 hover:bg-emerald-900/90 text-emerald-300 rounded-lg border border-emerald-800/60 transition-colors flex items-center gap-1.5"
+                      title="Run automated unit test suite in native runtime"
+                    >
+                      <Play className="w-3 h-3" />
+                      <span>Run Tests</span>
+                    </button>
+
                     <button
                       onClick={() => onLoadProjectIntoWorkspace(proj)}
                       className="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-sky-300 rounded-lg transition-colors flex items-center gap-1.5"
                     >
                       <FileCode className="w-3.5 h-3.5" />
-                      <span>Open in Workspace</span>
+                      <span>Open in VS Code</span>
                     </button>
                   </div>
                 </div>

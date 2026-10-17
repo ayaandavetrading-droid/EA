@@ -41,6 +41,8 @@ export interface WorkspaceState {
   diagnostics: string[];
   selection?: string;
   openFiles?: string[];
+  filesMap?: Record<string, string>;
+  activeLanguage?: string;
 }
 
 export interface SuggestedTask {
@@ -136,4 +138,7 @@ export interface ProjectRegistryItem {
   testStatus: string;
   completedAt: string | null;
   description: string;
+  requirements?: string[];
+  files?: { filename: string; content: string; language: string }[];
+  testCommand?: string;
 }
