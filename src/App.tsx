@@ -8,6 +8,8 @@ import { RiskFortressTab } from './components/RiskFortressTab';
 import { BacktestLabTab } from './components/BacktestLabTab';
 import { DeploymentTab } from './components/DeploymentTab';
 import { SetupGuideModal } from './components/SetupGuideModal';
+import { MobileBuildCenterModal } from './components/MobileBuildCenterModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import {
   Smartphone,
   Activity,
@@ -17,7 +19,8 @@ import {
   Download,
   RefreshCw,
   Coins,
-  Zap
+  Zap,
+  HelpCircle
 } from 'lucide-react';
 import {
   AuditLogItem,
@@ -40,6 +43,7 @@ import {
   triggerGoldEmergencyStop,
   updateGoldRiskConfig
 } from './services/api';
+import { useScreenWakeLock } from './hooks/useScreenWakeLock';
 
 type TabKey = 'onetap' | 'phone' | 'cockpit' | 'strategies' | 'risk' | 'backtest' | 'deployment';
 
@@ -47,6 +51,14 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('onetap');
   const [appName, setAppName] = useState<string>('Apex Gold AI');
   const [isSetupGuideOpen, setIsSetupGuideOpen] = useState<boolean>(false);
+  const [isMobileCenterOpen, setIsMobileCenterOpen] = useState<boolean>(false);
+
+  // Global screen wake lock state
+  const {
+    isSupported: isWakeLockSupported,
+    isActive: isWakeLockActive,
+    toggleLock: toggleWakeLock,
+  } = useScreenWakeLock(true);
 
   // Application Data States
   const [telemetry, setTelemetry] = useState<GoldSystemTelemetry | null>(null);
@@ -151,8 +163,8 @@ export default function App() {
   };
 
   const tabs: { key: TabKey; label: string; icon: React.FC<{ className?: string }>; count?: number }[] = [
-    { key: 'onetap', label: 'One-Tap Trader', icon: Zap },
-    { key: 'phone', label: 'Phone Screen Agent', icon: Smartphone },
+    { key: 'onetap', label: '1-Tap Trader', icon: Zap },
+    { key: 'phone', label: 'Phone Agent', icon: Smartphone },
     { key: 'cockpit', label: 'Gold Cockpit', icon: Activity, count: positions.length },
     { key: 'strategies', label: '12 Strategies', icon: Layers, count: strategies.filter((s) => s.enabled).length },
     { key: 'risk', label: 'Risk Fortress', icon: ShieldAlert },
@@ -173,7 +185,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans pb-16 md:pb-0">
       {/* Universal Top Header */}
       <Header
         telemetry={telemetry}
@@ -185,10 +197,10 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 lg:p-6 space-y-5">
-        {/* Navigation Tabs Bar */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 lg:p-6 space-y-4">
+        {/* Navigation Tabs Bar for Tablet & Desktop */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 overflow-x-auto gap-2">
-          <nav className="flex space-x-1 sm:space-x-2">
+          <nav className="flex space-x-1 sm:space-x-1.5">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.key;
@@ -197,7 +209,7 @@ export default function App() {
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
                     isActive
                       ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
@@ -221,13 +233,24 @@ export default function App() {
             })}
           </nav>
 
-          <button
-            onClick={refreshData}
-            title="Refresh market data"
-            className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors flex-shrink-0"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => setIsMobileCenterOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-amber-400 text-xs font-medium transition-all"
+              title="Mobile APK & iOS Compatibility Center"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Mobile APK / iOS</span>
+            </button>
+
+            <button
+              onClick={refreshData}
+              title="Refresh market data"
+              className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         {/* 1. Primary One-Tap Mobile Experience */}
@@ -237,6 +260,7 @@ export default function App() {
             positions={positions}
             onRefresh={refreshData}
             onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
+            onOpenMobileCenter={() => setIsMobileCenterOpen(true)}
           />
         )}
 
@@ -282,14 +306,80 @@ export default function App() {
         {activeTab === 'deployment' && <DeploymentTab />}
       </main>
 
+      {/* Mobile Bottom Navigation Bar (Visible on mobile screens) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-2 py-1.5 flex items-center justify-around text-[10px]">
+        <button
+          onClick={() => setActiveTab('onetap')}
+          className={`flex flex-col items-center py-1 px-2 rounded-lg transition-all ${
+            activeTab === 'onetap' ? 'text-amber-400 font-bold' : 'text-slate-400'
+          }`}
+        >
+          <Zap className="w-4 h-4 mb-0.5" />
+          <span>1-Tap</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('phone')}
+          className={`flex flex-col items-center py-1 px-2 rounded-lg transition-all ${
+            activeTab === 'phone' ? 'text-amber-400 font-bold' : 'text-slate-400'
+          }`}
+        >
+          <Smartphone className="w-4 h-4 mb-0.5" />
+          <span>Screen</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('cockpit')}
+          className={`flex flex-col items-center py-1 px-2 rounded-lg transition-all relative ${
+            activeTab === 'cockpit' ? 'text-amber-400 font-bold' : 'text-slate-400'
+          }`}
+        >
+          <Activity className="w-4 h-4 mb-0.5" />
+          <span>Cockpit</span>
+          {positions.length > 0 && (
+            <span className="absolute top-0 right-1 h-2 w-2 rounded-full bg-emerald-400" />
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('deployment')}
+          className={`flex flex-col items-center py-1 px-2 rounded-lg transition-all ${
+            activeTab === 'deployment' ? 'text-amber-400 font-bold' : 'text-slate-400'
+          }`}
+        >
+          <Download className="w-4 h-4 mb-0.5" />
+          <span>MQL5/VPS</span>
+        </button>
+
+        <button
+          onClick={() => setIsMobileCenterOpen(true)}
+          className="flex flex-col items-center py-1 px-2 rounded-lg text-slate-400 hover:text-white"
+        >
+          <Smartphone className="w-4 h-4 mb-0.5 text-cyan-400" />
+          <span>Mobile APK</span>
+        </button>
+      </nav>
+
       {/* Setup Guide Modal */}
       <SetupGuideModal
         isOpen={isSetupGuideOpen}
         onClose={() => setIsSetupGuideOpen(false)}
       />
 
-      {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 px-6 py-4 text-center text-xs text-slate-500 font-mono">
+      {/* Mobile Build & Compatibility Center Modal */}
+      <MobileBuildCenterModal
+        isOpen={isMobileCenterOpen}
+        onClose={() => setIsMobileCenterOpen(false)}
+        isWakeLockActive={isWakeLockActive}
+        isWakeLockSupported={isWakeLockSupported}
+        onToggleWakeLock={toggleWakeLock}
+      />
+
+      {/* Offline Status Toast Indicator */}
+      <OfflineIndicator />
+
+      {/* Desktop Footer */}
+      <footer className="hidden md:block border-t border-slate-900 bg-slate-950 px-6 py-4 text-center text-xs text-slate-500 font-mono">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 justify-center">
             <Coins className="w-3.5 h-3.5 text-amber-500" />

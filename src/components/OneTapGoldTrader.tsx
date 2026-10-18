@@ -25,7 +25,9 @@ import {
   Clock,
   Check,
   Video,
-  VideoOff
+  VideoOff,
+  Zap,
+  BarChart2
 } from 'lucide-react';
 import {
   ExecutionMode,
@@ -44,12 +46,15 @@ import {
   startGoldScanning,
   stopGoldTrading
 } from '../services/api';
+import { useScreenWakeLock } from '../hooks/useScreenWakeLock';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface OneTapGoldTraderProps {
   telemetry: GoldSystemTelemetry | null;
   positions: GoldPositionRecord[];
   onRefresh: () => void;
   onOpenSetupGuide: () => void;
+  onOpenMobileCenter: () => void;
 }
 
 export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
@@ -57,6 +62,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
   positions,
   onRefresh,
   onOpenSetupGuide,
+  onOpenMobileCenter,
 }) => {
   // Primary Control States
   const [isScanning, setIsScanning] = useState<boolean>(true);
@@ -65,6 +71,15 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
   const [liveKeyInput, setLiveKeyInput] = useState<string>('');
   const [showStopProcedureModal, setShowStopProcedureModal] = useState<boolean>(false);
   const [stopProcedure, setStopProcedure] = useState<'HALT_NEW_ENTRIES' | 'HALT_AND_CLOSE'>('HALT_NEW_ENTRIES');
+
+  // Screen Wake Lock hook
+  const {
+    isSupported: isWakeLockSupported,
+    isActive: isWakeLockActive,
+    requestLock: requestWakeLock,
+    releaseLock: releaseWakeLock,
+    toggleLock: toggleWakeLock,
+  } = useScreenWakeLock(true); // default keep awake on
 
   // Screen Sharing WebRTC State
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
@@ -76,7 +91,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [isVisionAnalyzing, setIsVisionAnalyzing] = useState<boolean>(false);
   const [visionReport, setVisionReport] = useState<any>(null);
-  const [deviceType, setDeviceType] = useState<'iOS' | 'Android'>('iOS');
+  const [selectedChartTf, setSelectedChartTf] = useState<GoldTimeframe>('M5');
 
   const account = telemetry?.account;
   const market = telemetry?.market;
@@ -90,6 +105,8 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
     try {
       await startGoldScanning();
       setIsScanning(true);
+      // Auto-enable screen keep-awake so device does not sleep on table
+      await requestWakeLock();
       onRefresh();
     } catch (err: any) {
       alert(err.message || 'Failed to start autonomous scanner');
@@ -105,6 +122,8 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
       await stopGoldTrading(stopProcedure);
       setIsScanning(false);
       setShowStopProcedureModal(false);
+      // Release wake lock to restore standard operating system sleep
+      await releaseWakeLock();
       onRefresh();
     } catch (err: any) {
       alert(err.message || 'Failed to execute stop procedure');
@@ -124,6 +143,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
       await setGoldExecutionMode('LIVE_STRICT_CONFIRM', liveKeyInput.trim());
       setShowLiveAuthModal(false);
       setLiveKeyInput('');
+      await requestWakeLock();
       onRefresh();
     } catch (err: any) {
       alert(err.message || 'Live mode switch failed');
@@ -147,14 +167,12 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
   // WebRTC Screen-Sharing Handler
   const handleStartScreenShare = async () => {
     if (!navigator.mediaDevices?.getDisplayMedia) {
-      alert('Screen capture API is not directly supported by this browser. You can upload an MT5 screenshot or photo below.');
+      alert('Live screen capture is not directly permitted in this web context. You can upload an MT5 screenshot below.');
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'window',
-        },
+        video: { displaySurface: 'window' },
         audio: false,
       });
 
@@ -166,12 +184,12 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
         videoRef.current.play();
       }
 
-      // Handle user stopping screen share via browser banner
+      // Handle user stopping screen share via native browser banner
       stream.getVideoTracks()[0].onended = () => {
         handleStopScreenShare();
       };
 
-      // Trigger automatic first vision snapshot after 1.5 seconds
+      // Trigger automatic initial vision snapshot after 1.5 seconds
       setTimeout(() => {
         captureAndAnalyzeFrame(stream);
       }, 1500);
@@ -205,7 +223,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
         const base64Data = canvas.toDataURL('image/jpeg', 0.85);
         setUploadedImage(base64Data);
 
-        const report = await analyzeMobileScreenVision(base64Data, 'Live WebRTC screen frame captured by user');
+        const report = await analyzeMobileScreenVision(base64Data, 'Live WebRTC screen frame captured from MT5');
         setVisionReport(report);
         onRefresh();
       }
@@ -254,10 +272,10 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-5 pb-8 font-sans">
-      {/* 1. TOP HEADER: BRANDING & 1-TAP VPS SYNC BADGE */}
-      <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+    <div className="max-w-4xl mx-auto space-y-4 pb-12 font-sans px-1 sm:px-2">
+      {/* 1. TOP HEADER: BRANDING, SCREEN-AWAKE TOGGLE & 1-TAP VPS SYNC */}
+      <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-600 to-yellow-700 flex items-center justify-center shadow-lg shadow-amber-500/20 ring-1 ring-amber-400/50 flex-shrink-0">
             <span className="font-extrabold text-slate-950 text-base font-mono">AU</span>
           </div>
@@ -269,21 +287,40 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              One-Tap Autonomous Gold Scalper • Independent VPS Engine
+              One-Tap Autonomous Gold Scalper • Independent VPS Execution
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+        {/* Actions: Install App, Screen Awake, Setup Guide */}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+          {/* PWA Install Button */}
+          <PWAInstallButton onOpenMobileCenter={onOpenMobileCenter} />
+
+          {/* Screen Wake Lock Button */}
+          <button
+            onClick={toggleWakeLock}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+              isWakeLockActive
+                ? 'bg-amber-950/80 border-amber-600 text-amber-300 shadow-sm'
+                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400'
+            }`}
+            title="Keep screen awake while monitoring trades on table"
+          >
+            <Zap className={`w-3.5 h-3.5 ${isWakeLockActive ? 'text-amber-400 fill-amber-400' : 'text-slate-500'}`} />
+            <span className="hidden sm:inline">Screen:</span>
+            <span>{isWakeLockActive ? 'Awake' : 'Sleep OK'}</span>
+          </button>
+
           <button
             onClick={onOpenSetupGuide}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-all"
           >
             <Server className="w-3.5 h-3.5 text-amber-400" />
-            <span>Setup & VPS Guide</span>
+            <span>Setup</span>
           </button>
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-400 text-xs font-mono font-bold">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-400 text-xs font-mono font-bold">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
@@ -294,14 +331,21 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
       </div>
 
       {/* 2. THE THREE MAIN CONTROLS (START • LIVE TRADING • STOP) */}
-      <div className="bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-slate-800 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-          <span className="text-xs uppercase font-bold tracking-wider text-slate-400">
-            Primary Autonomous Controls
-          </span>
-          <span className="text-xs font-mono text-amber-400 font-bold">
-            State: {telemetry?.operationalState || 'READY'}
-          </span>
+      <div className="bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-slate-800 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-3.5">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase font-bold tracking-wider text-slate-300">
+              Primary Autonomous Controls
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
+              (One-Tap Autonomous XAUUSD Loop)
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono text-amber-400 font-bold">
+              {telemetry?.operationalState || 'READY'}
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -309,19 +353,19 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
           <button
             onClick={handleStart}
             disabled={actionLoading}
-            className={`w-full py-3.5 px-4 rounded-xl flex items-center justify-center gap-2.5 font-bold text-sm shadow-xl transition-all transform active:scale-95 ${
+            className={`w-full py-4 px-4 rounded-xl flex items-center justify-center gap-3 font-bold text-sm shadow-xl transition-all transform active:scale-95 ${
               isScanning && !telemetry?.isPaused
                 ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 ring-2 ring-emerald-400 shadow-emerald-500/30'
                 : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
             }`}
           >
-            <Play className={`w-5 h-5 ${isScanning && !telemetry?.isPaused ? 'fill-slate-950' : 'fill-white'}`} />
+            <Play className={`w-5 h-5 flex-shrink-0 ${isScanning && !telemetry?.isPaused ? 'fill-slate-950' : 'fill-white'}`} />
             <div className="text-left">
-              <div className="leading-tight">
+              <div className="leading-tight text-sm">
                 {isScanning && !telemetry?.isPaused ? 'SCANNING ACTIVE' : 'START TRADING'}
               </div>
               <div className="text-[10px] opacity-80 font-normal">
-                {isScanning && !telemetry?.isPaused ? 'Analyzing M1-H1 Gold' : 'Auto-scan & execute'}
+                {isScanning && !telemetry?.isPaused ? 'Auto M1-H1 Gold Analysis' : 'Autonomous scan & execute'}
               </div>
             </div>
           </button>
@@ -331,24 +375,24 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
             <button
               onClick={handleSwitchToDemo}
               disabled={actionLoading}
-              className="w-full py-3.5 px-4 rounded-xl flex items-center justify-center gap-2.5 font-bold text-sm bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-600/30 ring-2 ring-rose-400 transition-all transform active:scale-95"
+              className="w-full py-4 px-4 rounded-xl flex items-center justify-center gap-3 font-bold text-sm bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-600/30 ring-2 ring-rose-400 transition-all transform active:scale-95"
             >
-              <Lock className="w-5 h-5" />
+              <Lock className="w-5 h-5 flex-shrink-0" />
               <div className="text-left">
-                <div className="leading-tight">LIVE TRADING: ON</div>
-                <div className="text-[10px] text-rose-200 font-normal">Tap to switch to Demo</div>
+                <div className="leading-tight text-sm">LIVE TRADING: ON</div>
+                <div className="text-[10px] text-rose-200 font-normal">Tap to switch back to Demo</div>
               </div>
             </button>
           ) : (
             <button
               onClick={() => setShowLiveAuthModal(true)}
               disabled={actionLoading}
-              className="w-full py-3.5 px-4 rounded-xl flex items-center justify-center gap-2.5 font-bold text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-lg transition-all transform active:scale-95"
+              className="w-full py-4 px-4 rounded-xl flex items-center justify-center gap-3 font-bold text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-lg transition-all transform active:scale-95"
             >
-              <Unlock className="w-5 h-5 text-amber-400" />
+              <Unlock className="w-5 h-5 text-amber-400 flex-shrink-0" />
               <div className="text-left">
-                <div className="leading-tight">DEMO AUTONOMOUS</div>
-                <div className="text-[10px] text-amber-400 font-normal">Tap to authorize Live</div>
+                <div className="leading-tight text-sm">DEMO AUTONOMOUS</div>
+                <div className="text-[10px] text-amber-400 font-normal">Tap to authorize Live Mode</div>
               </div>
             </button>
           )}
@@ -357,21 +401,36 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
           <button
             onClick={() => setShowStopProcedureModal(true)}
             disabled={actionLoading}
-            className="w-full py-3.5 px-4 rounded-xl flex items-center justify-center gap-2.5 font-bold text-sm bg-slate-900 hover:bg-slate-800 text-rose-400 border border-rose-500/40 hover:border-rose-500 shadow-xl transition-all transform active:scale-95"
+            className="w-full py-4 px-4 rounded-xl flex items-center justify-center gap-3 font-bold text-sm bg-slate-900 hover:bg-slate-800 text-rose-400 border border-rose-500/40 hover:border-rose-500 shadow-xl transition-all transform active:scale-95"
           >
-            <Power className="w-5 h-5 text-rose-400" />
+            <Power className="w-5 h-5 text-rose-400 flex-shrink-0" />
             <div className="text-left">
-              <div className="leading-tight">STOP TRADING</div>
+              <div className="leading-tight text-sm">STOP TRADING</div>
               <div className="text-[10px] text-slate-400 font-normal">Safe position procedure</div>
             </div>
           </button>
         </div>
+
+        {/* Screen Awake Informational Notice Banner */}
+        <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[11px] text-slate-400">
+          <div className="flex items-center gap-1.5">
+            <Zap className={`w-3.5 h-3.5 ${isWakeLockActive ? 'text-amber-400' : 'text-slate-500'}`} />
+            <span>
+              {isWakeLockActive
+                ? 'Device screen will stay awake while you observe trading.'
+                : 'Screen keep-awake is standby. Normal phone timeout applies.'}
+            </span>
+          </div>
+          <span className="text-[10px] font-mono text-slate-500 hidden sm:inline">
+            WakeLock API: {isWakeLockSupported ? 'Active' : 'Simulated'}
+          </span>
+        </div>
       </div>
 
       {/* 3. CORE TELEMETRY DASHBOARD (ACCOUNT • SYMBOL • CONNECTION • EQUITY • PnL) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 font-mono">
         {/* Card A: Account & Broker */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-lg space-y-1">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 sm:p-3.5 shadow-lg space-y-1">
           <span className="text-[10px] font-sans uppercase font-bold text-slate-400 block">
             Connected Account
           </span>
@@ -387,7 +446,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
         </div>
 
         {/* Card B: Gold Symbol & Spread */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-lg space-y-1">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 sm:p-3.5 shadow-lg space-y-1">
           <span className="text-[10px] font-sans uppercase font-bold text-slate-400 block">
             Gold Instrument
           </span>
@@ -403,7 +462,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
         </div>
 
         {/* Card C: Account Equity & Free Margin */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-lg space-y-1">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 sm:p-3.5 shadow-lg space-y-1">
           <span className="text-[10px] font-sans uppercase font-bold text-slate-400 block">
             Account Equity
           </span>
@@ -419,7 +478,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
         </div>
 
         {/* Card D: Daily Profit or Loss & Drawdown */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-lg space-y-1">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 sm:p-3.5 shadow-lg space-y-1">
           <span className="text-[10px] font-sans uppercase font-bold text-slate-400 block">
             Today's Net PnL
           </span>
@@ -437,7 +496,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
 
       {/* 4. ACTIVE OPEN GOLD POSITION CARD */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
           <div className="flex items-center gap-2">
             <Coins className="w-4 h-4 text-amber-400" />
             <h3 className="text-sm font-bold text-white">Active Gold Position</h3>
@@ -553,7 +612,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
             {isScreenSharing ? (
               <button
                 onClick={handleStopScreenShare}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-bold shadow-md transition-all"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-bold shadow-md transition-all"
               >
                 <VideoOff className="w-3.5 h-3.5" />
                 Stop Sharing
@@ -600,8 +659,20 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
               /* Synthetic / Static Phone Mockup */
               <div className="w-full max-w-[280px] bg-slate-950 border-4 border-slate-800 rounded-2xl p-2.5 shadow-xl space-y-2 font-mono text-[11px]">
                 <div className="flex justify-between items-center text-slate-400 border-b border-slate-800 pb-1 text-[10px]">
-                  <span className="font-bold text-amber-400">MT5 Mobile (iOS / Android)</span>
-                  <span className="text-emerald-400">XAUUSD, M5</span>
+                  <span className="font-bold text-amber-400">MT5 Mobile Viewport</span>
+                  <div className="flex items-center gap-1">
+                    {(['M1', 'M5', 'M15', 'H1'] as GoldTimeframe[]).map((tf) => (
+                      <button
+                        key={tf}
+                        onClick={() => setSelectedChartTf(tf)}
+                        className={`px-1.5 py-0.5 rounded text-[9px] ${
+                          selectedChartTf === tf ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400'
+                        }`}
+                      >
+                        {tf}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800 space-y-1">
@@ -629,21 +700,21 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
                 <label className="block w-full border border-dashed border-slate-700 hover:border-amber-500 rounded-lg p-2 text-center cursor-pointer text-[10px] text-slate-400 transition-all bg-slate-900/40">
                   <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
                   <Upload className="w-3.5 h-3.5 mx-auto mb-1 text-slate-500" />
-                  <span>Or upload MT5 phone screenshot</span>
+                  <span>Upload MT5 phone screenshot</span>
                 </label>
               </div>
             )}
           </div>
 
           {/* Right: Autonomous Observe-Interpret-Act-Verify Feed */}
-          <div className="md:col-span-7 space-y-2.5 text-xs font-mono">
+          <div className="md:col-span-7 space-y-2 text-xs font-mono">
             <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
               <span className="text-amber-400 font-bold text-[10px] uppercase font-sans flex items-center gap-1.5">
                 <Eye className="w-3.5 h-3.5 text-amber-400" />
                 1. Observe (Screen Inspection)
               </span>
               <p className="text-slate-300 text-[11px] leading-relaxed">
-                {screenAgent?.lastObservedAction || 'Observed M5 Gold Chart: Retesting 21 EMA support ($2,725.50)'}
+                {screenAgent?.lastObservedAction || `Observed ${selectedChartTf} Gold Chart: Retesting 21 EMA support ($2,725.50)`}
               </p>
             </div>
 
@@ -669,7 +740,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
 
             {visionReport && (
               <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-800/80 text-[11px] space-y-1">
-                <span className="font-bold text-amber-300 block">AI Vision Report:</span>
+                <span className="font-bold text-amber-300 block">AI Vision Inspection:</span>
                 <p className="text-slate-200 font-sans text-xs">{visionReport.plainLanguageMarketExplanation}</p>
               </div>
             )}
@@ -678,14 +749,14 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
       </div>
 
       {/* 6. CONTINUOUS OPERATION / DECOUPLED VPS REASSURANCE */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 flex items-start gap-3 text-xs">
+      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 sm:p-4 flex items-start gap-3 text-xs">
         <Server className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
         <div className="space-y-1">
           <span className="font-bold text-white block">
             Independent VPS / Desktop Continuous Operation
           </span>
           <p className="text-slate-400 leading-relaxed text-[11px]">
-            You can lock your phone or leave it on a table. The native MetaTrader 5 Expert Advisor (<code className="text-amber-300 font-mono">ApexGoldAI.mq5</code>) runs authoritatively on your desktop terminal or VPS. It executes orders, moves stop-losses to break-even, applies trailing stops, and exits trades independently even if phone screen-sharing disconnects.
+            You can lock your phone or leave it on a table. The native MetaTrader 5 Expert Advisor (<code className="text-amber-300 font-mono">ApexGoldAI.mq5</code>) runs authoritatively on your desktop terminal or VPS. It executes orders, moves stop-losses to break-even, applies trailing stops, and exits trades independently even if phone screen-sharing disconnects or battery runs out.
           </p>
         </div>
       </div>
