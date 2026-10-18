@@ -10,20 +10,20 @@ import {
   Sliders,
   DollarSign
 } from 'lucide-react';
-import { runBacktest } from '../services/api';
+import { runGoldBacktest } from '../services/api';
 
 export const BacktestLabTab: React.FC = () => {
-  const [symbol, setSymbol] = useState('EURUSD');
+  const [symbol, setSymbol] = useState('XAUUSD');
   const [months, setMonths] = useState(6);
-  const [riskPct, setRiskPct] = useState(0.75);
-  const [slippagePoints, setSlippagePoints] = useState(1.2);
+  const [riskPct, setRiskPct] = useState(0.25);
+  const [slippageDollars, setSlippageDollars] = useState(0.15);
   const [isRunning, setIsRunning] = useState(false);
   const [backtestData, setBacktestData] = useState<any>(null);
 
   const executeSimulation = async () => {
     setIsRunning(true);
     try {
-      const data = await runBacktest({ symbol, months, riskPct, slippagePoints });
+      const data = await runGoldBacktest({ symbol, months, riskPct, slippageDollars });
       setBacktestData(data);
     } catch (err: any) {
       alert(err.message || 'Simulation failed');
@@ -65,17 +65,16 @@ export const BacktestLabTab: React.FC = () => {
       {/* Simulator Parameter Controls */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-lg grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono">
         <div>
-          <label className="text-slate-400 block text-[11px] font-sans mb-1">Target Instrument</label>
+          <label className="text-slate-400 block text-[11px] font-sans mb-1">Target Instrument (Gold Only)</label>
           <select
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white font-bold focus:outline-none"
+            className="w-full bg-slate-950 border border-amber-500/50 rounded px-2.5 py-1.5 text-amber-300 font-bold focus:outline-none"
           >
-            <option value="EURUSD">EURUSD (ECN 5-digit)</option>
-            <option value="XAUUSD">XAUUSD (Gold Spot)</option>
-            <option value="GBPUSD">GBPUSD</option>
-            <option value="USDJPY">USDJPY</option>
-            <option value="BTCUSD">BTCUSD</option>
+            <option value="XAUUSD">XAUUSD (Spot Gold 100 oz)</option>
+            <option value="GOLD">GOLD (Broker Mapping: XAUUSD)</option>
+            <option value="XAUUSD.a">XAUUSD.a (Raw ECN Suffix)</option>
+            <option value="XAUUSDm">XAUUSDm (Micro Gold Lot)</option>
           </select>
         </div>
 
@@ -99,22 +98,22 @@ export const BacktestLabTab: React.FC = () => {
             onChange={(e) => setRiskPct(parseFloat(e.target.value))}
             className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white font-bold focus:outline-none"
           >
-            <option value={0.50}>0.50% (Ultra Conservative)</option>
-            <option value={0.75}>0.75% (Recommended Default)</option>
-            <option value={1.00}>1.00% (Moderate Sizing)</option>
+            <option value={0.25}>0.25% (Conservative Default)</option>
+            <option value={0.50}>0.50% (Standard Gold Scalp)</option>
+            <option value={0.75}>0.75% (Maximum Prudent Limit)</option>
           </select>
         </div>
 
         <div>
-          <label className="text-slate-400 block text-[11px] font-sans mb-1">Slippage & Spread Stress</label>
+          <label className="text-slate-400 block text-[11px] font-sans mb-1">Slippage & Spread Friction</label>
           <select
-            value={slippagePoints}
-            onChange={(e) => setSlippagePoints(parseFloat(e.target.value))}
+            value={slippageDollars}
+            onChange={(e) => setSlippageDollars(parseFloat(e.target.value))}
             className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white font-bold focus:outline-none"
           >
-            <option value={0.5}>0.5 pts (Ideal ECN)</option>
-            <option value={1.2}>1.2 pts (Realistic Standard)</option>
-            <option value={2.5}>2.5 pts (High Volatility Stress)</option>
+            <option value={0.10}>$0.10/oz (ECN Low Spread 10pts)</option>
+            <option value={0.15}>$0.15/oz (Realistic 15-20pts)</option>
+            <option value={0.35}>$0.35/oz (High Volatility Spread)</option>
           </select>
         </div>
       </div>

@@ -8,12 +8,14 @@ import {
   AlertTriangle,
   Lock,
   Edit2,
-  Check
+  Check,
+  Eye,
+  Smartphone
 } from 'lucide-react';
-import { ExecutionMode, SystemTelemetry } from '../types/apex';
+import { ExecutionMode, GoldOperationalState, GoldSystemTelemetry } from '../types/apex';
 
 interface HeaderProps {
-  telemetry: SystemTelemetry | null;
+  telemetry: GoldSystemTelemetry | null;
   onEmergencyStop: (action: 'HALT_AND_LIQUIDATE' | 'HALT_ENTRIES_ONLY') => void;
   onResetEmergencyStop: () => void;
   onModeChange: (mode: ExecutionMode, authKey?: string) => Promise<void>;
@@ -37,13 +39,15 @@ export const Header: React.FC<HeaderProps> = ({
   const [liveKeyInput, setLiveKeyInput] = useState('');
   const [liveChecklist, setLiveChecklist] = useState({
     demoTested: false,
-    riskUnderstood: false,
+    goldVolatilityUnderstood: false,
     slVerified: false,
     brokerRawEcn: false,
   });
 
   const account = telemetry?.account;
+  const market = telemetry?.market;
   const isEmergency = telemetry?.isEmergencyStopped || telemetry?.circuitBreakerTripped;
+  const opState: GoldOperationalState = telemetry?.operationalState || (isEmergency ? 'EMERGENCY STOP' : 'READY');
 
   const handleSaveName = () => {
     if (editedName.trim()) {
@@ -53,12 +57,12 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const handleConfirmLiveMode = async () => {
-    if (!liveChecklist.demoTested || !liveChecklist.riskUnderstood || !liveChecklist.slVerified) {
-      alert('You must acknowledge all mandatory safety checklist requirements before enabling live trading.');
+    if (!liveChecklist.demoTested || !liveChecklist.goldVolatilityUnderstood || !liveChecklist.slVerified) {
+      alert('You must acknowledge all mandatory safety checklist requirements before authorizing live Gold trading.');
       return;
     }
     try {
-      await onModeChange('LIVE_STRICT_AUTH', liveKeyInput.trim());
+      await onModeChange('LIVE_STRICT_CONFIRM', liveKeyInput.trim());
       setShowLiveAuthModal(false);
       setLiveKeyInput('');
     } catch (err: any) {
@@ -66,14 +70,28 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  // State colors
+  const stateColorMap: Record<GoldOperationalState, { bg: string; text: string; ring: string }> = {
+    'DISCONNECTED': { bg: 'bg-slate-800', text: 'text-slate-400', ring: 'ring-slate-700' },
+    'OBSERVING': { bg: 'bg-blue-950', text: 'text-blue-400', ring: 'ring-blue-800' },
+    'ANALYZING': { bg: 'bg-purple-950', text: 'text-purple-400', ring: 'ring-purple-800' },
+    'READY': { bg: 'bg-emerald-950', text: 'text-emerald-400', ring: 'ring-emerald-800' },
+    'EXECUTING': { bg: 'bg-cyan-950 animate-pulse', text: 'text-cyan-400', ring: 'ring-cyan-500' },
+    'MANAGING POSITION': { bg: 'bg-indigo-950', text: 'text-indigo-400', ring: 'ring-indigo-800' },
+    'PAUSED': { bg: 'bg-amber-950', text: 'text-amber-400', ring: 'ring-amber-800' },
+    'EMERGENCY STOP': { bg: 'bg-rose-950', text: 'text-rose-400', ring: 'ring-rose-800' },
+  };
+
+  const stateStyle = stateColorMap[opState] || stateColorMap['READY'];
+
   return (
     <>
-      <header className="sticky top-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-4 lg:px-6 py-2.5 transition-all">
+      <header className="sticky top-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-3 lg:px-6 py-2.5 transition-all">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          {/* Left: App Identity & Status */}
+          {/* Left: App Identity & Instrument Badge */}
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-cyan-500 via-indigo-600 to-blue-700 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-400/40">
-              <Cpu className="w-5 h-5 text-white" />
+            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-amber-400 via-amber-600 to-yellow-700 flex items-center justify-center shadow-lg shadow-amber-500/20 ring-1 ring-amber-400/50 flex-shrink-0">
+              <span className="font-extrabold text-slate-950 text-sm tracking-tighter font-mono">AU</span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -83,13 +101,12 @@ export const Header: React.FC<HeaderProps> = ({
                     type="text"
                     value={editedName}
                     onChange={(e) => setEditedName(e.target.value)}
-                    className="bg-slate-900 border border-cyan-500/60 rounded px-2 py-0.5 text-sm font-bold text-white focus:outline-none"
+                    className="bg-slate-900 border border-amber-500/60 rounded px-2 py-0.5 text-sm font-bold text-white focus:outline-none"
                     autoFocus
                   />
                   <button
                     onClick={handleSaveName}
-                    className="p-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white"
-                    title="Save name"
+                    className="p-1 rounded bg-amber-600 hover:bg-amber-500 text-slate-950"
                   >
                     <Check className="w-3.5 h-3.5" />
                   </button>
@@ -98,73 +115,74 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="flex items-center gap-1.5 group cursor-pointer" onClick={() => setIsEditingName(true)}>
                   <h1 className="text-base lg:text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
                     {appName}
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60 font-mono font-medium">
-                      MT5 Scalper
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-700/60 font-mono font-bold">
+                      XAUUSD ONLY
                     </span>
                   </h1>
-                  <Edit2 className="w-3 h-3 text-slate-500 group-hover:text-cyan-400 transition-colors opacity-0 group-hover:opacity-100" />
+                  <Edit2 className="w-3 h-3 text-slate-500 group-hover:text-amber-400 transition-colors opacity-0 group-hover:opacity-100" />
                 </div>
               )}
             </div>
 
-            {/* Connection & Terminal Health Pill */}
-            <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-800 text-xs font-mono">
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-900 border border-slate-800">
-                <span className="relative flex h-2 w-2">
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isEmergency ? 'bg-red-400' : 'bg-emerald-400'}`} />
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${isEmergency ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                </span>
-                <span className="text-slate-300 font-medium">
-                  {isEmergency ? 'CIRCUIT BREAKER' : 'MT5 LINKED'}
-                </span>
-                <span className="text-slate-500">|</span>
-                <span className="text-cyan-400 font-mono">{telemetry?.connection?.pingMs ?? 24}ms</span>
-              </div>
+            {/* Operational State Indicator Badge */}
+            <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold border ${stateStyle.bg} ${stateStyle.text} ring-1 ${stateStyle.ring}`}>
+              <span className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${opState === 'EMERGENCY STOP' ? 'bg-red-400' : 'bg-amber-400'}`} />
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${opState === 'EMERGENCY STOP' ? 'bg-red-500' : 'bg-amber-500'}`} />
+              </span>
+              <span>{opState}</span>
             </div>
           </div>
 
-          {/* Center: Live Account Telemetry Ribbon */}
-          {account && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:flex items-center gap-2 lg:gap-4 text-xs font-mono bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800">
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-sans">Account Equity</span>
-                <span className="font-bold text-white text-sm">
-                  ${account.equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-
-              <div className="border-l border-slate-800 pl-2 lg:pl-3">
-                <span className="text-slate-400 block text-[10px] uppercase font-sans">Free Margin</span>
-                <span className="font-semibold text-slate-200">
-                  ${account.freeMargin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-
-              <div className="border-l border-slate-800 pl-2 lg:pl-3">
-                <span className="text-slate-400 block text-[10px] uppercase font-sans">Daily PnL</span>
-                <span className={`font-bold ${account.dailyPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {account.dailyPnL >= 0 ? '+' : ''}${account.dailyPnL.toFixed(2)} ({account.dailyPnLPct >= 0 ? '+' : ''}{account.dailyPnLPct.toFixed(2)}%)
-                </span>
-              </div>
-
-              <div className="border-l border-slate-800 pl-2 lg:pl-3">
-                <span className="text-slate-400 block text-[10px] uppercase font-sans">Peak Drawdown</span>
-                <span className={`font-semibold ${account.currentDrawdownPct > 2.5 ? 'text-amber-400' : 'text-slate-200'}`}>
-                  {account.currentDrawdownPct.toFixed(2)}% <span className="text-slate-500 text-[10px]">/ 5.0%</span>
-                </span>
-              </div>
+          {/* Center: Live Gold Price & Account Telemetry Ribbon */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:flex items-center gap-2 lg:gap-4 text-xs font-mono bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800">
+            {/* Live Gold Price */}
+            <div>
+              <span className="text-slate-400 block text-[10px] uppercase font-sans">Gold Spot (XAUUSD)</span>
+              <span className="font-extrabold text-amber-400 text-sm">
+                ${market ? market.spotPrice.toFixed(2) : '2,727.35'}
+              </span>
+              <span className="text-slate-500 text-[10px] block">Spread: {market ? `${market.spreadPoints} pts ($${market.spreadDollars})` : '22 pts'}</span>
             </div>
-          )}
+
+            {/* Account Equity */}
+            {account && (
+              <>
+                <div className="border-l border-slate-800 pl-2 lg:pl-3">
+                  <span className="text-slate-400 block text-[10px] uppercase font-sans">Account Equity</span>
+                  <span className="font-bold text-white text-sm">
+                    ${account.equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-slate-500 text-[10px] block">Free: ${account.freeMargin.toFixed(0)}</span>
+                </div>
+
+                <div className="border-l border-slate-800 pl-2 lg:pl-3">
+                  <span className="text-slate-400 block text-[10px] uppercase font-sans">Daily PnL</span>
+                  <span className={`font-bold ${account.dailyPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {account.dailyPnL >= 0 ? '+' : ''}${account.dailyPnL.toFixed(2)} ({account.dailyPnLPct >= 0 ? '+' : ''}{account.dailyPnLPct.toFixed(2)}%)
+                  </span>
+                  <span className="text-slate-500 text-[10px] block">Cap: -1.0%</span>
+                </div>
+
+                <div className="border-l border-slate-800 pl-2 lg:pl-3">
+                  <span className="text-slate-400 block text-[10px] uppercase font-sans">Drawdown</span>
+                  <span className={`font-semibold ${account.currentDrawdownPct > 2.0 ? 'text-amber-400' : 'text-slate-200'}`}>
+                    {account.currentDrawdownPct.toFixed(2)}% <span className="text-slate-500 text-[10px]">/ 4.0%</span>
+                  </span>
+                  <span className="text-slate-500 text-[10px] block">High: ${account.peakEquity.toFixed(0)}</span>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Right: Operational Mode Selector & Emergency Stop */}
           <div className="flex items-center gap-2">
-            {/* Mode Selector */}
             <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-xs font-medium">
               <button
-                onClick={() => onModeChange('DEMO_EXECUTION')}
+                onClick={() => onModeChange('DEMO_AUTONOMOUS')}
                 className={`px-2.5 py-1 rounded-md transition-all ${
-                  telemetry?.mode === 'DEMO_EXECUTION'
-                    ? 'bg-cyan-600 text-white font-bold shadow-sm'
+                  telemetry?.mode === 'DEMO_AUTONOMOUS'
+                    ? 'bg-amber-600 text-slate-950 font-bold shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -172,20 +190,20 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
 
               <button
-                onClick={() => onModeChange('SCAN_ONLY')}
+                onClick={() => onModeChange('MONITOR_ONLY')}
                 className={`px-2.5 py-1 rounded-md transition-all ${
-                  telemetry?.mode === 'SCAN_ONLY'
+                  telemetry?.mode === 'MONITOR_ONLY'
                     ? 'bg-indigo-600 text-white font-bold shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Scan Only
+                Monitor Only
               </button>
 
               <button
                 onClick={() => setShowLiveAuthModal(true)}
                 className={`px-2.5 py-1 rounded-md flex items-center gap-1 transition-all ${
-                  telemetry?.mode === 'LIVE_STRICT_AUTH'
+                  telemetry?.mode === 'LIVE_STRICT_CONFIRM'
                     ? 'bg-rose-600 text-white font-bold shadow-sm ring-1 ring-rose-400'
                     : 'text-slate-400 hover:text-rose-400'
                 }`}
@@ -202,7 +220,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition-all"
               >
                 <Activity className="w-3.5 h-3.5" />
-                Reset Emergency Stop
+                Reset Circuit Breaker
               </button>
             ) : (
               <button
@@ -219,7 +237,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Emergency Stop Modal */}
       {showEmergencyModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-rose-500/60 rounded-xl max-w-md w-full p-6 shadow-2xl shadow-rose-950/50 space-y-4">
             <div className="flex items-center gap-3 text-rose-400">
               <div className="p-2.5 rounded-lg bg-rose-950 border border-rose-800">
@@ -227,12 +245,12 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <div>
                 <h3 className="text-lg font-bold text-white">Emergency Stop Confirmation</h3>
-                <p className="text-xs text-rose-300">Cease trading operations immediately</p>
+                <p className="text-xs text-rose-300">Halt Gold trading operations immediately</p>
               </div>
             </div>
 
             <p className="text-sm text-slate-300 leading-relaxed">
-              Activating Emergency Stop will trip the local circuit breaker and instruct the MT5 Expert Advisor to immediately halt. Choose an execution policy:
+              Activating Emergency Stop will trip the local circuit breaker and instruct the native MQL5 Expert Advisor to immediately stop. Choose execution policy:
             </p>
 
             <div className="space-y-2 text-xs">
@@ -252,9 +270,9 @@ export const Header: React.FC<HeaderProps> = ({
                   className="mt-0.5 accent-rose-500"
                 />
                 <div>
-                  <span className="font-bold block text-sm">Halt & Liquidate All Positions (Recommended)</span>
+                  <span className="font-bold block text-sm">Halt & Liquidate All Gold Positions (Recommended)</span>
                   <span className="text-slate-400 text-xs">
-                    Instantly closes all EA-managed positions at market to eliminate ongoing market exposure.
+                    Instantly closes any open XAUUSD position at market to eliminate market volatility exposure.
                   </span>
                 </div>
               </label>
@@ -277,7 +295,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <div>
                   <span className="font-bold block text-sm">Halt New Entries Only</span>
                   <span className="text-slate-400 text-xs">
-                    Existing open positions remain protected by their hard SL/TP and trailing rules, but zero new orders can open.
+                    Existing gold positions remain protected by hard SL/TP and trailing rules, but zero new orders can trigger.
                   </span>
                 </div>
               </label>
@@ -313,13 +331,13 @@ export const Header: React.FC<HeaderProps> = ({
                 <AlertTriangle className="w-6 h-6 text-amber-400" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">Live Execution Safety Gate</h3>
-                <p className="text-xs text-amber-300">Strict confirmation required for real capital deployment</p>
+                <h3 className="text-lg font-bold text-white">Live Gold Execution Safety Gate</h3>
+                <p className="text-xs text-amber-300">Strict confirmation required for real capital deployment on XAUUSD</p>
               </div>
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
-              Live trading introduces real financial risk. A 100% account return is an aspirational milestone, not a guaranteed outcome. You must verify and check all mandatory safety prerequisites:
+              Gold (XAUUSD) exhibits rapid price swings of $10-$40 in minutes. Live trading requires explicit risk acknowledgment. Verify all mandatory prerequisites:
             </p>
 
             <div className="space-y-2 bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs">
@@ -330,17 +348,17 @@ export const Header: React.FC<HeaderProps> = ({
                   onChange={(e) => setLiveChecklist({ ...liveChecklist, demoTested: e.target.checked })}
                   className="mt-0.5 accent-amber-500"
                 />
-                <span>I have completed at least 14 days of demo forward testing on MetaTrader 5 without abnormal errors.</span>
+                <span>I have completed at least 14 days of demo forward testing on MT5 without abnormal execution errors.</span>
               </label>
 
               <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
                 <input
                   type="checkbox"
-                  checked={liveChecklist.riskUnderstood}
-                  onChange={(e) => setLiveChecklist({ ...liveChecklist, riskUnderstood: e.target.checked })}
+                  checked={liveChecklist.goldVolatilityUnderstood}
+                  onChange={(e) => setLiveChecklist({ ...liveChecklist, goldVolatilityUnderstood: e.target.checked })}
                   className="mt-0.5 accent-amber-500"
                 />
-                <span>I understand that conservative risk (0.5% - 0.75% per trade) is strictly enforced and minimum lots will be skipped if risk exceeds limits.</span>
+                <span>I understand that conservative risk (0.25% - 0.50% per trade) is strictly enforced and trades will be skipped if 0.01 lot exceeds my dollar risk budget.</span>
               </label>
 
               <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
@@ -350,7 +368,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onChange={(e) => setLiveChecklist({ ...liveChecklist, slVerified: e.target.checked })}
                   className="mt-0.5 accent-amber-500"
                 />
-                <span>I confirm that every position must have a broker-validated stop-loss at entry.</span>
+                <span>I confirm that every position must have a broker-validated protective Stop Loss placed at entry.</span>
               </label>
 
               <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
@@ -360,17 +378,17 @@ export const Header: React.FC<HeaderProps> = ({
                   onChange={(e) => setLiveChecklist({ ...liveChecklist, brokerRawEcn: e.target.checked })}
                   className="mt-0.5 accent-amber-500"
                 />
-                <span>I am using an ECN / Raw Spread account with low commission suitable for M5 scalping.</span>
+                <span>I am using an ECN / Raw Spread account with low gold spreads (under 30 points / $0.30/oz).</span>
               </label>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Authorization Key (Passphrase: <code className="text-amber-400 font-mono">AUTHORIZED_LIVE_APEX_2026</code>)
+                Authorization Key (Passphrase: <code className="text-amber-400 font-mono">AUTHORIZED_GOLD_APEX_2026</code>)
               </label>
               <input
                 type="text"
-                placeholder="Enter AUTHORIZED_LIVE_APEX_2026"
+                placeholder="Enter AUTHORIZED_GOLD_APEX_2026"
                 value={liveKeyInput}
                 onChange={(e) => setLiveKeyInput(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
@@ -386,9 +404,9 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
               <button
                 onClick={handleConfirmLiveMode}
-                className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-xs shadow-lg shadow-amber-600/30"
+                className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/30"
               >
-                Authorize Live Trading
+                Authorize Live Gold Scalper
               </button>
             </div>
           </div>

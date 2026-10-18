@@ -1,58 +1,57 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
+import { OneTapGoldTrader } from './components/OneTapGoldTrader';
 import { CockpitTab } from './components/CockpitTab';
-import { ScannerTab } from './components/ScannerTab';
+import { PhoneScreenAgentTab } from './components/PhoneScreenAgentTab';
 import { StrategyDeckTab } from './components/StrategyDeckTab';
 import { RiskFortressTab } from './components/RiskFortressTab';
-import { VisionInspectorTab } from './components/VisionInspectorTab';
 import { BacktestLabTab } from './components/BacktestLabTab';
 import { DeploymentTab } from './components/DeploymentTab';
+import { SetupGuideModal } from './components/SetupGuideModal';
 import {
+  Smartphone,
   Activity,
-  Radar,
   Layers,
   ShieldAlert,
-  Eye,
   BarChart3,
   Download,
-  Terminal,
-  RefreshCw
+  RefreshCw,
+  Coins,
+  Zap
 } from 'lucide-react';
 import {
   AuditLogItem,
-  ClosedTradeRecord,
   ExecutionMode,
-  PositionRecord,
-  RiskConfig,
-  ScannedSymbolItem,
-  StrategyItem,
-  SystemTelemetry
+  GoldClosedTradeRecord,
+  GoldPositionRecord,
+  GoldRiskConfig,
+  GoldSystemTelemetry,
+  StrategyItem
 } from './types/apex';
 import {
-  closePosition,
-  fetchAuditLogs,
-  fetchPositions,
-  fetchScanner,
-  fetchStrategies,
-  fetchTelemetry,
-  resetEmergencyStop,
-  setExecutionMode,
-  toggleStrategy,
-  triggerEmergencyStop,
-  updateRiskConfig
+  closeGoldPosition,
+  fetchGoldAuditLogs,
+  fetchGoldPositions,
+  fetchGoldStrategies,
+  fetchGoldTelemetry,
+  resetGoldEmergencyStop,
+  setGoldExecutionMode,
+  toggleGoldStrategy,
+  triggerGoldEmergencyStop,
+  updateGoldRiskConfig
 } from './services/api';
 
-type TabKey = 'cockpit' | 'scanner' | 'strategies' | 'risk' | 'vision' | 'backtest' | 'deployment';
+type TabKey = 'onetap' | 'phone' | 'cockpit' | 'strategies' | 'risk' | 'backtest' | 'deployment';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabKey>('cockpit');
-  const [appName, setAppName] = useState<string>('Apex AI Trader');
+  const [activeTab, setActiveTab] = useState<TabKey>('onetap');
+  const [appName, setAppName] = useState<string>('Apex Gold AI');
+  const [isSetupGuideOpen, setIsSetupGuideOpen] = useState<boolean>(false);
 
   // Application Data States
-  const [telemetry, setTelemetry] = useState<SystemTelemetry | null>(null);
-  const [positions, setPositions] = useState<PositionRecord[]>([]);
-  const [tradeHistory, setTradeHistory] = useState<ClosedTradeRecord[]>([]);
-  const [scannerSymbols, setScannerSymbols] = useState<ScannedSymbolItem[]>([]);
+  const [telemetry, setTelemetry] = useState<GoldSystemTelemetry | null>(null);
+  const [positions, setPositions] = useState<GoldPositionRecord[]>([]);
+  const [tradeHistory, setTradeHistory] = useState<GoldClosedTradeRecord[]>([]);
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -60,24 +59,20 @@ export default function App() {
   // Polling data function
   const refreshData = useCallback(async () => {
     try {
-      const [tel, pos, scan, strats, logs] = await Promise.all([
-        fetchTelemetry().catch(() => null),
-        fetchPositions().catch(() => ({ positions: [], tradeHistory: [], totalUnrealizedPnL: 0 })),
-        fetchScanner().catch(() => ({ symbols: [], scannedCount: 0, approvedCount: 0 })),
-        fetchStrategies().catch(() => ({ strategies: [] })),
-        fetchAuditLogs().catch(() => ({ logs: [] })),
+      const [tel, pos, strats, logs] = await Promise.all([
+        fetchGoldTelemetry().catch(() => null),
+        fetchGoldPositions().catch(() => ({ positions: [], tradeHistory: [], totalUnrealizedPnL: 0 })),
+        fetchGoldStrategies().catch(() => ({ strategies: [] })),
+        fetchGoldAuditLogs().catch(() => ({ logs: [] })),
       ]);
 
       if (tel) {
         setTelemetry(tel);
-        if (tel.appName && appName === 'Apex AI Trader') setAppName(tel.appName);
+        if (tel.appName && appName === 'Apex Gold AI') setAppName(tel.appName);
       }
       if (pos) {
         setPositions(pos.positions);
         setTradeHistory(pos.tradeHistory);
-      }
-      if (scan) {
-        setScannerSymbols(scan.symbols);
       }
       if (strats) {
         setStrategies(strats.strategies);
@@ -101,7 +96,7 @@ export default function App() {
   // Handlers
   const handleEmergencyStop = async (action: 'HALT_AND_LIQUIDATE' | 'HALT_ENTRIES_ONLY') => {
     try {
-      await triggerEmergencyStop(action);
+      await triggerGoldEmergencyStop(action);
       await refreshData();
     } catch (err: any) {
       alert(err.message || 'Failed to trigger emergency stop');
@@ -110,7 +105,7 @@ export default function App() {
 
   const handleResetEmergencyStop = async () => {
     try {
-      await resetEmergencyStop();
+      await resetGoldEmergencyStop();
       await refreshData();
     } catch (err: any) {
       alert(err.message || 'Failed to reset emergency stop');
@@ -118,22 +113,22 @@ export default function App() {
   };
 
   const handleModeChange = async (mode: ExecutionMode, authKey?: string) => {
-    await setExecutionMode(mode, authKey);
+    await setGoldExecutionMode(mode, authKey);
     await refreshData();
   };
 
   const handleClosePosition = async (ticket: number) => {
     try {
-      await closePosition(ticket, 'User Dashboard Close');
+      await closeGoldPosition(ticket, 'User Dashboard Close');
       await refreshData();
     } catch (err: any) {
-      alert(err.message || 'Failed to close position');
+      alert(err.message || 'Failed to close gold position');
     }
   };
 
   const handleToggleStrategy = async (id: number, enabled: boolean) => {
     try {
-      await toggleStrategy(id, enabled);
+      await toggleGoldStrategy(id, enabled);
       setStrategies((prev) =>
         prev.map((s) => (s.id === id ? { ...s, enabled } : s))
       );
@@ -142,12 +137,12 @@ export default function App() {
     }
   };
 
-  const handleUpdateRiskConfig = async (newConfig: RiskConfig) => {
+  const handleUpdateRiskConfig = async (newConfig: GoldRiskConfig) => {
     try {
-      await updateRiskConfig(newConfig);
+      await updateGoldRiskConfig(newConfig);
       await refreshData();
     } catch (err: any) {
-      alert(err.message || 'Failed to update risk parameters');
+      alert(err.message || 'Failed to update gold risk parameters');
     }
   };
 
@@ -156,14 +151,26 @@ export default function App() {
   };
 
   const tabs: { key: TabKey; label: string; icon: React.FC<{ className?: string }>; count?: number }[] = [
-    { key: 'cockpit', label: 'Cockpit & Trades', icon: Activity, count: positions.length },
-    { key: 'scanner', label: 'Market Scanner', icon: Radar, count: scannerSymbols.filter((s) => s.passesRiskFilters).length },
-    { key: 'strategies', label: '15 Strategy Library', icon: Layers, count: strategies.filter((s) => s.enabled).length },
+    { key: 'onetap', label: 'One-Tap Trader', icon: Zap },
+    { key: 'phone', label: 'Phone Screen Agent', icon: Smartphone },
+    { key: 'cockpit', label: 'Gold Cockpit', icon: Activity, count: positions.length },
+    { key: 'strategies', label: '12 Strategies', icon: Layers, count: strategies.filter((s) => s.enabled).length },
     { key: 'risk', label: 'Risk Fortress', icon: ShieldAlert },
-    { key: 'vision', label: 'Visual AI Inspector', icon: Eye },
-    { key: 'backtest', label: 'Backtest & Monte Carlo', icon: BarChart3 },
-    { key: 'deployment', label: 'MQL5 EA Package & Docs', icon: Download },
+    { key: 'backtest', label: 'Backtest Lab', icon: BarChart3 },
+    { key: 'deployment', label: 'MQL5 EA & VPS', icon: Download },
   ];
+
+  const defaultScreenAgent = {
+    connected: true,
+    device: 'iPhone 15 Pro / iOS 18 (MT5 Mobile)',
+    activeTab: 'CHART' as const,
+    selectedTimeframe: 'M5' as const,
+    zoomLevel: 'STANDARD_LATEST',
+    lastObservedAction: 'Observed M5 Gold Chart: Retesting 21 EMA support ($2,725.50)',
+    proposedAction: 'Maintain position monitoring; dynamic break-even armed at $2,726.00',
+    verificationStatus: 'Screen verified: Symbol is XAUUSD, account intact',
+    lastVerifiedTimestamp: new Date().toLocaleTimeString(),
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -178,10 +185,10 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 lg:p-6 space-y-5">
         {/* Navigation Tabs Bar */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3 overflow-x-auto gap-2">
-          <nav className="flex space-x-1 lg:space-x-2">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 overflow-x-auto gap-2">
+          <nav className="flex space-x-1 sm:space-x-2">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.key;
@@ -190,19 +197,19 @@ export default function App() {
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
                     isActive
-                      ? 'bg-cyan-600/20 text-cyan-400 border border-cyan-500/40 shadow-sm'
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-cyan-400' : 'text-slate-500'}`} />
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-slate-950' : 'text-slate-400'}`} />
                   <span>{tab.label}</span>
                   {tab.count !== undefined && tab.count > 0 && (
                     <span
                       className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
                         isActive
-                          ? 'bg-cyan-500 text-slate-950 font-bold'
+                          ? 'bg-slate-950 text-amber-400 font-bold'
                           : 'bg-slate-800 text-slate-400'
                       }`}
                     >
@@ -217,13 +224,34 @@ export default function App() {
           <button
             onClick={refreshData}
             title="Refresh market data"
-            className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors flex-shrink-0"
+            className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors flex-shrink-0"
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Tab View Contents */}
+        {/* 1. Primary One-Tap Mobile Experience */}
+        {activeTab === 'onetap' && (
+          <OneTapGoldTrader
+            telemetry={telemetry}
+            positions={positions}
+            onRefresh={refreshData}
+            onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
+          />
+        )}
+
+        {/* 2. Phone Screen Agent Simulator & Multimodal Inspector */}
+        {activeTab === 'phone' && (
+          <PhoneScreenAgentTab
+            screenAgent={telemetry?.screenAgent || defaultScreenAgent}
+            operationalState={telemetry?.operationalState || 'READY'}
+            spotPrice={telemetry?.market?.spotPrice || 2727.35}
+            openPositions={positions}
+            onRefresh={refreshData}
+          />
+        )}
+
+        {/* 3. Gold Cockpit & Trades */}
         {activeTab === 'cockpit' && (
           <CockpitTab
             telemetry={telemetry}
@@ -234,12 +262,12 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'scanner' && <ScannerTab symbols={scannerSymbols} />}
-
+        {/* 4. Strategy Deck */}
         {activeTab === 'strategies' && (
           <StrategyDeckTab strategies={strategies} onToggleStrategy={handleToggleStrategy} />
         )}
 
+        {/* 5. Risk Fortress */}
         {activeTab === 'risk' && telemetry && (
           <RiskFortressTab
             riskConfig={telemetry.riskConfig}
@@ -247,18 +275,27 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'vision' && <VisionInspectorTab />}
-
+        {/* 6. Backtest Lab */}
         {activeTab === 'backtest' && <BacktestLabTab />}
 
+        {/* 7. MQL5 Deployment & VPS */}
         {activeTab === 'deployment' && <DeploymentTab />}
       </main>
 
+      {/* Setup Guide Modal */}
+      <SetupGuideModal
+        isOpen={isSetupGuideOpen}
+        onClose={() => setIsSetupGuideOpen(false)}
+      />
+
       {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 px-6 py-4 text-center text-xs text-slate-600 font-mono">
+      <footer className="border-t border-slate-900 bg-slate-950 px-6 py-4 text-center text-xs text-slate-500 font-mono">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>{appName} • Autonomous MT5 Algorithmic Scalping System • Local Native Safety Core</span>
-          <span>Capital Preservation First • Hard ATR Stops • Zero Martingale</span>
+          <span className="flex items-center gap-1.5 justify-center">
+            <Coins className="w-3.5 h-3.5 text-amber-500" />
+            <strong className="text-slate-300">{appName}</strong> • Autonomous XAUUSD Scalping Agent • Native MQL5 Core
+          </span>
+          <span>Capital Preservation First • Hard ATR Stop-Loss • Non-Gold Execution Blocked</span>
         </div>
       </footer>
     </div>

@@ -1,4 +1,50 @@
-export type ExecutionMode = 'SCAN_ONLY' | 'PAPER_SIMULATION' | 'DEMO_EXECUTION' | 'LIVE_STRICT_AUTH';
+export type GoldOperationalState =
+  | 'DISCONNECTED'
+  | 'OBSERVING'
+  | 'ANALYZING'
+  | 'READY'
+  | 'EXECUTING'
+  | 'MANAGING POSITION'
+  | 'PAUSED'
+  | 'EMERGENCY STOP';
+
+export type ExecutionMode = 'DEMO_AUTONOMOUS' | 'MONITOR_ONLY' | 'LIVE_STRICT_CONFIRM';
+
+export type MobileTab = 'QUOTES' | 'CHART' | 'TRADE' | 'HISTORY' | 'SETTINGS';
+export type GoldTimeframe = 'M1' | 'M5' | 'M15' | 'H1';
+
+export interface GoldMarketData {
+  symbol: string;
+  spotPrice: number;
+  bid: number;
+  ask: number;
+  spreadPoints: number;
+  spreadDollars: number;
+  atr14: number;
+  spreadToAtrRatio: number;
+  sessionPhase: string;
+  regimeName: string;
+  regimeUncertainty: number;
+  activeStrategyRecommendation: string;
+  highImpactNews: {
+    title: string;
+    timeRemainingMinutes: number;
+    impact: string;
+    isPreNewsPauseActive: boolean;
+  };
+}
+
+export interface GoldScreenAgentState {
+  connected: boolean;
+  device: string;
+  activeTab: MobileTab;
+  selectedTimeframe: GoldTimeframe;
+  zoomLevel: string;
+  lastObservedAction: string;
+  proposedAction: string;
+  verificationStatus: string;
+  lastVerifiedTimestamp: string;
+}
 
 export interface AccountMetrics {
   login: number;
@@ -20,25 +66,21 @@ export interface AccountMetrics {
   maxDrawdownPct: number;
 }
 
-export interface RiskConfig {
-  maxRiskPerTradePct: number;
-  maxTotalOpenRiskPct: number;
+export interface GoldRiskConfig {
+  riskPerTradePct: number;
   maxDailyLossPct: number;
-  maxWeeklyLossPct: number;
   maxPeakDrawdownPct: number;
-  minFreeMarginLevel: number;
+  maxConcurrentGoldTrades: number;
   maxSpreadPoints: number;
   maxSpreadToAtrRatio: number;
-  maxSimultaneousTrades: number;
-  maxTradesPerSymbol: number;
-  maxCorrelatedCurrency: number;
   maxConsecutiveLosses: number;
   cooldownMinutes: number;
+  minFreeMarginLevel: number;
   equityCompounding: boolean;
   minLotPermitted: number;
 }
 
-export interface PositionRecord {
+export interface GoldPositionRecord {
   ticket: number;
   symbol: string;
   type: 'BUY' | 'SELL';
@@ -48,7 +90,7 @@ export interface PositionRecord {
   stopLoss: number;
   takeProfit: number;
   unrealizedPnL: number;
-  pnlPips: number;
+  pnlDollarsPerOz: number;
   currentR: number;
   breakEvenActivated: boolean;
   trailingActive: boolean;
@@ -58,7 +100,7 @@ export interface PositionRecord {
   comment: string;
 }
 
-export interface ClosedTradeRecord {
+export interface GoldClosedTradeRecord {
   ticket: number;
   symbol: string;
   type: 'BUY' | 'SELL';
@@ -66,30 +108,12 @@ export interface ClosedTradeRecord {
   openPrice: number;
   closePrice: number;
   netProfit: number;
-  pnlPips: number;
+  pnlDollarsPerOz: number;
   resultR: number;
   strategy: string;
   regime: string;
   closeReason: string;
   timestamp: string;
-}
-
-export interface ScannedSymbolItem {
-  symbol: string;
-  bid: number;
-  ask: number;
-  spreadPoints: number;
-  spreadCostUSD: number;
-  atr14: number;
-  spreadToAtrRatio: number;
-  regime: string;
-  regimeKey: string;
-  uncertainty: number;
-  bestStrategy: string;
-  action: string;
-  opportunityScore: number;
-  passesRiskFilters: boolean;
-  riskNotes: string;
 }
 
 export interface StrategyItem {
@@ -113,13 +137,18 @@ export interface AuditLogItem {
   symbol: string;
   event: string;
   strategy: string;
-  regime: string;
   details: string;
 }
 
-export interface SystemTelemetry {
+export interface GoldSystemTelemetry {
   appName: string;
   version: string;
+  instrument: string;
+  confirmedSymbol: string;
+  contractSizeOz: number;
+  tickSize: number;
+  tickValue: number;
+  operationalState: GoldOperationalState;
   mode: ExecutionMode;
   isEmergencyStopped: boolean;
   isPaused: boolean;
@@ -127,14 +156,22 @@ export interface SystemTelemetry {
   cooldownUntil: number;
   circuitBreakerTripped: boolean;
   circuitBreakerReason: string;
+  market: GoldMarketData;
   account: AccountMetrics;
-  riskConfig: RiskConfig;
-  connection: {
-    terminalConnected: boolean;
-    terminalVersion: string;
-    pingMs: number;
-    lastHeartbeat: number;
-    eaStatus: string;
-  };
+  screenAgent: GoldScreenAgentState;
+  riskConfig: GoldRiskConfig;
   openPositionsCount: number;
+  timestamp: string;
+}
+
+export interface MT5AccountProfile {
+  login: number;
+  broker: string;
+  server: string;
+  type: string;
+  balance: number;
+  equity: number;
+  currency: string;
+  isCurrent: boolean;
+  goldSymbol: string;
 }

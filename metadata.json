@@ -1,6 +1,6 @@
 {
-  "name": "Apex AI Trader - Autonomous AI MT5 Scalping Bot",
-  "description": "Professional-grade autonomous AI MT5 algorithmic scalping system with native MQL5 Expert Advisor, multi-regime AI market analysis, hard risk preservation engine, and real-time desktop & mobile dashboard.",
+  "name": "Apex Gold AI - Autonomous XAUUSD Scalping Agent",
+  "description": "Autonomous AI MT5 scalping agent dedicated exclusively to XAUUSD (Gold) with phone screen-sharing supervision, native MQL5 execution, gold-specific regime classification, and hard capital preservation.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

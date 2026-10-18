@@ -5,10 +5,9 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
-  Sliders,
   DollarSign,
-  Shield,
-  Activity
+  TrendingUp,
+  Sliders
 } from 'lucide-react';
 import { StrategyItem } from '../types/apex';
 
@@ -24,9 +23,9 @@ export const StrategyDeckTab: React.FC<StrategyDeckTabProps> = ({
   const [expandedId, setExpandedId] = useState<number | null>(1);
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
 
-  const categories = ['ALL', 'Trend Continuation', 'Trend Pullback', 'Breakout & Retest', 'Range Mean Reversion', 'Volatility Filter', 'MTF Alignment'];
+  const categories = ['ALL', 'Trend Pullback', 'Breakout & Retest', 'Key Level Reaction', 'Range Mean Reversion', 'Volatility Squeeze'];
 
-  const filteredStrategies = strategies.filter((s) => {
+  const filtered = strategies.filter((s) => {
     if (filterCategory !== 'ALL' && !s.category.includes(filterCategory)) return false;
     return true;
   });
@@ -36,26 +35,26 @@ export const StrategyDeckTab: React.FC<StrategyDeckTabProps> = ({
       {/* Header Bar */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-lg flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-indigo-950 border border-indigo-800 text-indigo-400">
+          <div className="p-2.5 rounded-lg bg-amber-950 border border-amber-800 text-amber-400">
             <Layers className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-sm lg:text-base font-bold text-white">15 Modular Scalping Strategies</h2>
+            <h2 className="text-sm lg:text-base font-bold text-white">12 Modular Gold Scalping Strategies</h2>
             <p className="text-xs text-slate-400">
-              Independently switchable, mathematically audited rules tested with realistic transaction costs & slippage
+              Calibrated specifically for Gold volatility, round psychological levels, and session liquidity
             </p>
           </div>
         </div>
 
-        {/* Category Filter */}
+        {/* Filter Pills */}
         <div className="flex flex-wrap gap-1 text-xs">
-          {['ALL', 'Trend Continuation', 'Breakout & Retest', 'Range Mean Reversion'].map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setFilterCategory(cat)}
               className={`px-2.5 py-1 rounded-md transition-all ${
                 filterCategory === cat
-                  ? 'bg-indigo-600 text-white font-bold'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
                   : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
               }`}
             >
@@ -67,7 +66,7 @@ export const StrategyDeckTab: React.FC<StrategyDeckTabProps> = ({
 
       {/* Grid of Strategy Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredStrategies.map((strat) => {
+        {filtered.map((strat) => {
           const isExpanded = expandedId === strat.id;
 
           return (
@@ -75,16 +74,16 @@ export const StrategyDeckTab: React.FC<StrategyDeckTabProps> = ({
               key={strat.id}
               className={`bg-slate-900/90 border rounded-xl shadow-lg transition-all flex flex-col ${
                 strat.enabled
-                  ? 'border-slate-800 hover:border-slate-700'
-                  : 'border-slate-800/50 opacity-60 bg-slate-950/60'
+                  ? 'border-slate-800 hover:border-amber-500/50'
+                  : 'border-slate-800/40 opacity-60 bg-slate-950/60'
               }`}
             >
-              {/* Card Header */}
+              {/* Header */}
               <div className="p-4 border-b border-slate-800 flex items-start justify-between gap-2">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-cyan-400 font-bold">
-                      S{strat.id}
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800 font-bold">
+                      G{strat.id}
                     </span>
                     <span className="text-xs text-slate-400 font-medium">{strat.category}</span>
                   </div>
@@ -99,19 +98,19 @@ export const StrategyDeckTab: React.FC<StrategyDeckTabProps> = ({
                     onChange={(e) => onToggleStrategy(strat.id, e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                  <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
                 </label>
               </div>
 
-              {/* Performance Metrics Ribbon */}
-              <div className="grid grid-cols-4 gap-1 p-3 bg-slate-950/60 border-b border-slate-800 text-center text-xs font-mono">
+              {/* Performance Metrics */}
+              <div className="grid grid-cols-4 gap-1 p-2.5 bg-slate-950/60 border-b border-slate-800 text-center text-xs font-mono">
                 <div>
                   <span className="text-slate-500 block text-[9px]">WIN RATE</span>
                   <span className="text-emerald-400 font-bold">{strat.winRate}%</span>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[9px]">PROFIT FACTOR</span>
-                  <span className="text-cyan-400 font-bold">{strat.profitFactor}</span>
+                  <span className="text-amber-400 font-bold">{strat.profitFactor}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[9px]">AVG R:R</span>
@@ -123,12 +122,12 @@ export const StrategyDeckTab: React.FC<StrategyDeckTabProps> = ({
                 </div>
               </div>
 
-              {/* Body Summary */}
+              {/* Body */}
               <div className="p-4 space-y-3 flex-1 text-xs">
                 <p className="text-slate-300 text-xs leading-relaxed">{strat.description}</p>
 
                 <div className="text-[11px] font-mono text-slate-400 bg-slate-950/80 p-2 rounded border border-slate-800">
-                  <span className="text-slate-500 block text-[10px]">INDICATORS & TIMEFRAME:</span>
+                  <span className="text-slate-500 block text-[10px]">TIMEFRAME & RULES:</span>
                   <span className="text-cyan-300">{strat.timeframe} • {strat.indicators}</span>
                 </div>
 
@@ -137,7 +136,7 @@ export const StrategyDeckTab: React.FC<StrategyDeckTabProps> = ({
                     <div className="space-y-1">
                       <span className="text-amber-400 text-[10px] font-bold block flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" />
-                        FAILURE MODES & REVERSAL RISKS:
+                        FAILURE MODES & ANOMALIES:
                       </span>
                       <p className="text-slate-400 text-[11px]">{strat.failureMode}</p>
                     </div>
@@ -145,7 +144,7 @@ export const StrategyDeckTab: React.FC<StrategyDeckTabProps> = ({
                     <div className="space-y-1 pt-1">
                       <span className="text-emerald-400 text-[10px] font-bold block flex items-center gap-1">
                         <DollarSign className="w-3 h-3" />
-                        TRANSACTION FRICTION SENSITIVITY:
+                        GOLD SPREAD SENSITIVITY:
                       </span>
                       <p className="text-slate-400 text-[11px]">{strat.costSensitivity}</p>
                     </div>
@@ -153,12 +152,12 @@ export const StrategyDeckTab: React.FC<StrategyDeckTabProps> = ({
                 )}
               </div>
 
-              {/* Expander Footer */}
+              {/* Footer Drawer */}
               <button
                 onClick={() => setExpandedId(isExpanded ? null : strat.id)}
                 className="w-full py-2 px-4 border-t border-slate-800/80 text-[11px] text-slate-400 hover:text-white flex items-center justify-center gap-1 bg-slate-950/40 hover:bg-slate-900 transition-colors"
               >
-                <span>{isExpanded ? 'Hide Specifications' : 'View In-Depth Rules & Assumptions'}</span>
+                <span>{isExpanded ? 'Hide Details' : 'View In-Depth Rules'}</span>
                 {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
             </div>
