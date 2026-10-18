@@ -1,0 +1,45 @@
+;====================================================================
+; Apex AI Trader - Conservative Production Defaults Preset (.set)
+; Designed for capital preservation, strict drawdown control & FTMO/Prop-firm compliance
+;====================================================================
+InpAppWorkingName=Apex AI Trader
+InpMagicNumber=100991
+InpExecutionMode=2
+InpLiveAuthorizationKey=
+InpScanSymbolsList=EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD,EURJPY,GBPJPY,XAUUSD,BTCUSD
+
+;--- Capital & Hard Risk Preservation
+InpMaxRiskPerTradePct=0.75
+InpMaxTotalOpenRiskPct=3.00
+InpMaxDailyLossPct=2.00
+InpMaxWeeklyLossPct=5.00
+InpMaxPeakDrawdownPct=5.00
+InpMinFreeMarginLevel=250.0
+InpMaxSpreadPoints=25
+InpMaxSpreadToAtrRatio=0.20
+InpMaxSimultaneousTrades=3
+InpMaxTradesPerSymbol=1
+InpMaxCorrelatedCurrency=2
+InpMaxConsecutiveLosses=3
+InpCooldownMinutes=90
+InpEquityCompounding=true
+
+;--- Stop-Loss & Take-Profit Governance
+InpAtrMultiplierSL=1.50
+InpAtrMultiplierTP=2.50
+InpMinRewardRiskRatio=1.50
+InpUseBreakEven=true
+InpBreakEvenTriggerR=1.00
+InpBreakEvenOffsetPips=1.50
+InpUseTrailingStop=true
+InpTrailingActivationR=1.50
+InpUsePartialProfitTaking=true
+InpPartialCloseR=1.30
+InpPartialClosePct=50.0
+InpMaxHoldingBarsM5=36
+
+;--- Remote Dashboard & AI Service Bridge
+InpEnableWebBridge=true
+InpServerUrl=http://127.0.0.1:3000/api/mt5
+InpApiKey=apex_demo_key_99
+InpScanIntervalSeconds=5

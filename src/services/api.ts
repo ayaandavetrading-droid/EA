@@ -1,279 +1,132 @@
-import { ExecutionResult, StepDiff, SuggestedTask, WorkflowStage } from '../types/deskpilot';
+import {
+  AuditLogItem,
+  ClosedTradeRecord,
+  PositionRecord,
+  ScannedSymbolItem,
+  StrategyItem,
+  SystemTelemetry
+} from '../types/apex';
 
-export interface WorkspaceAnalysisResult {
-  detectedApp: string;
-  summary: string;
-  languageOrType: string;
-  openResource: string;
-  visibleHighlights: string[];
-  suggestedTasks: SuggestedTask[];
-  practiceProjectIdea?: {
-    title: string;
-    description: string;
-    starterFile: string;
-  };
-}
-
-export async function analyzeWorkspace(params: {
-  appType: string;
-  fileOrSheet: string;
-  content: string;
-  errors?: string[];
-  selection?: string;
-}): Promise<WorkspaceAnalysisResult> {
-  const res = await fetch('/api/analyze-workspace', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to analyze workspace');
-  }
-
+export async function fetchTelemetry(): Promise<SystemTelemetry> {
+  const res = await fetch('/api/mt5/telemetry');
+  if (!res.ok) throw new Error('Failed to fetch telemetry');
   return res.json();
 }
 
-export async function planTask(params: {
-  task: SuggestedTask;
-  workspaceContext: any;
-}): Promise<{ stages: WorkflowStage[]; targetFile: string }> {
-  const res = await fetch('/api/plan-task', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to plan task');
-  }
-
+export async function fetchPositions(): Promise<{
+  positions: PositionRecord[];
+  tradeHistory: ClosedTradeRecord[];
+  totalUnrealizedPnL: number;
+}> {
+  const res = await fetch('/api/mt5/positions');
+  if (!res.ok) throw new Error('Failed to fetch positions');
   return res.json();
 }
 
-export async function generateStepDiff(params: {
-  task: SuggestedTask;
-  stageNumber: number;
-  stageName: string;
-  currentContent: string;
-  language?: string;
-}): Promise<StepDiff> {
-  const res = await fetch('/api/generate-step', {
+export async function closePosition(ticket: number, reason: string = 'Manual Dashboard Close'): Promise<any> {
+  const res = await fetch('/api/mt5/close-position', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify({ ticket, reason }),
   });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to generate step diff');
-  }
-
+  if (!res.ok) throw new Error('Failed to close position');
   return res.json();
 }
 
-export async function runCode(params: {
-  code: string;
-  testCode?: string;
-  language?: string;
-}): Promise<ExecutionResult> {
-  const res = await fetch('/api/run-code', {
+export async function triggerEmergencyStop(action: 'HALT_AND_LIQUIDATE' | 'HALT_ENTRIES_ONLY' = 'HALT_AND_LIQUIDATE'): Promise<any> {
+  const res = await fetch('/api/mt5/emergency-stop', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify({ action }),
   });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Execution failed');
-  }
-
+  if (!res.ok) throw new Error('Failed to trigger emergency stop');
   return res.json();
 }
 
-export async function requestExcelAssist(params: {
-  action: 'explain_formula' | 'generate_formula' | 'clean_data' | 'generate_summary' | 'audit_sheet';
-  sheetData: any;
-  selectedRange?: string;
-  prompt?: string;
+export async function resetEmergencyStop(): Promise<any> {
+  const res = await fetch('/api/mt5/reset-emergency-stop', {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to reset circuit breaker');
+  return res.json();
+}
+
+export async function fetchScanner(): Promise<{
+  symbols: ScannedSymbolItem[];
+  scannedCount: number;
+  approvedCount: number;
+}> {
+  const res = await fetch('/api/mt5/scanner');
+  if (!res.ok) throw new Error('Failed to fetch scanner matrix');
+  return res.json();
+}
+
+export async function fetchStrategies(): Promise<{ strategies: StrategyItem[] }> {
+  const res = await fetch('/api/mt5/strategies');
+  if (!res.ok) throw new Error('Failed to fetch strategies');
+  return res.json();
+}
+
+export async function toggleStrategy(id: number, enabled: boolean): Promise<any> {
+  const res = await fetch('/api/mt5/toggle-strategy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, enabled }),
+  });
+  if (!res.ok) throw new Error('Failed to toggle strategy');
+  return res.json();
+}
+
+export async function setExecutionMode(mode: string, authKey?: string): Promise<any> {
+  const res = await fetch('/api/mt5/set-mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode, authKey }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: 'Failed to set mode' }));
+    throw new Error(err.message || 'Mode switch failed');
+  }
+  return res.json();
+}
+
+export async function fetchAuditLogs(): Promise<{ logs: AuditLogItem[] }> {
+  const res = await fetch('/api/mt5/audit-logs');
+  if (!res.ok) throw new Error('Failed to fetch audit logs');
+  return res.json();
+}
+
+export async function updateRiskConfig(config: any): Promise<any> {
+  const res = await fetch('/api/mt5/update-risk-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error('Failed to update risk parameters');
+  return res.json();
+}
+
+export async function analyzeScreenShot(screenshotBase64: string, userNotes?: string): Promise<any> {
+  const res = await fetch('/api/mt5/screen-analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ screenshotBase64, userNotes }),
+  });
+  if (!res.ok) throw new Error('Failed to analyze screenshot');
+  return res.json();
+}
+
+export async function runBacktest(params: {
+  symbol: string;
+  months: number;
+  riskPct: number;
+  slippagePoints: number;
 }): Promise<any> {
-  const res = await fetch('/api/excel-assist', {
+  const res = await fetch('/api/mt5/backtest-run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Excel assistance failed');
-  }
-
+  if (!res.ok) throw new Error('Failed to run backtest simulation');
   return res.json();
 }
-
-export async function analyzeTradingChart(params: {
-  imageBase64?: string;
-  ticker?: string;
-  timeframe?: string;
-  currentPrice?: number;
-  sampleAsset?: string;
-}): Promise<any> {
-  const res = await fetch('/api/analyze-trading-chart', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to analyze trading chart');
-  }
-
-  return res.json();
-}
-
-export async function analyzeScreenshot(params: {
-  screenshotBase64: string;
-  userNotes?: string;
-}): Promise<any> {
-  const res = await fetch('/api/analyze-screenshot', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to analyze screenshot');
-  }
-
-  return res.json();
-}
-
-export async function fetchProjectsRegistry(): Promise<any> {
-  const res = await fetch('/api/projects');
-  if (!res.ok) {
-    throw new Error('Failed to fetch projects registry');
-  }
-  return res.json();
-}
-
-export async function generateAutonomousProject(params: {
-  projectType: string;
-  name?: string;
-}): Promise<any> {
-  const res = await fetch('/api/generate-autonomous-project', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to generate autonomous project');
-  }
-
-  return res.json();
-}
-
-export async function updateProjectStatus(
-  id: string,
-  params: { status?: string; testStatus?: string }
-): Promise<any> {
-  const res = await fetch(`/api/projects/${id}/status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-
-  if (!res.ok) {
-    throw new Error('Failed to update project status');
-  }
-
-  return res.json();
-}
-
-export async function transitionProjectState(
-  id: string,
-  state: string,
-  logMessage?: string
-): Promise<any> {
-  const res = await fetch(`/api/projects/${id}/transition`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ state, logMessage }),
-  });
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to transition project state');
-  }
-
-  return res.json();
-}
-
-export async function updateProjectFile(
-  id: string,
-  filename: string,
-  content: string
-): Promise<any> {
-  const res = await fetch(`/api/projects/${id}/files`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename, content }),
-  });
-
-  if (!res.ok) {
-    throw new Error('Failed to save project file');
-  }
-
-  return res.json();
-}
-
-export async function restartProject(id: string): Promise<any> {
-  const res = await fetch(`/api/projects/${id}/restart`, {
-    method: 'POST',
-  });
-
-  if (!res.ok) {
-    throw new Error('Failed to restart project');
-  }
-
-  return res.json();
-}
-
-export async function archiveProject(id: string, archive = true): Promise<any> {
-  const res = await fetch(`/api/projects/${id}/archive`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ archive }),
-  });
-
-  if (!res.ok) {
-    throw new Error('Failed to archive project');
-  }
-
-  return res.json();
-}
-
-export async function autoDebugProject(id: string): Promise<any> {
-  const res = await fetch(`/api/projects/${id}/auto-debug`, {
-    method: 'POST',
-  });
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to auto-debug project');
-  }
-
-  return res.json();
-}
-
-export function downloadPythonPackageUrl(): string {
-  return '/api/download-package';
-}
-
-
-

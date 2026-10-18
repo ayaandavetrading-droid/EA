@@ -1,112 +1,399 @@
-import React from 'react';
-import { Download, Terminal } from 'lucide-react';
-import { SupportedAppType } from '../types/deskpilot';
+import React, { useState } from 'react';
+import {
+  ShieldAlert,
+  Activity,
+  Cpu,
+  Power,
+  CheckCircle2,
+  AlertTriangle,
+  Lock,
+  Edit2,
+  Check
+} from 'lucide-react';
+import { ExecutionMode, SystemTelemetry } from '../types/apex';
 
 interface HeaderProps {
-  activeApp: SupportedAppType;
-  onSelectApp: (app: SupportedAppType) => void;
-  onOpenPythonModal: () => void;
-  onDownloadZip: () => void;
+  telemetry: SystemTelemetry | null;
+  onEmergencyStop: (action: 'HALT_AND_LIQUIDATE' | 'HALT_ENTRIES_ONLY') => void;
+  onResetEmergencyStop: () => void;
+  onModeChange: (mode: ExecutionMode, authKey?: string) => Promise<void>;
+  appName: string;
+  onRenameApp: (newName: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  activeApp,
-  onSelectApp,
-  onOpenPythonModal,
-  onDownloadZip,
+  telemetry,
+  onEmergencyStop,
+  onResetEmergencyStop,
+  onModeChange,
+  appName,
+  onRenameApp,
 }) => {
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState(appName);
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  const [emergencyAction, setEmergencyAction] = useState<'HALT_AND_LIQUIDATE' | 'HALT_ENTRIES_ONLY'>('HALT_AND_LIQUIDATE');
+  const [showLiveAuthModal, setShowLiveAuthModal] = useState(false);
+  const [liveKeyInput, setLiveKeyInput] = useState('');
+  const [liveChecklist, setLiveChecklist] = useState({
+    demoTested: false,
+    riskUnderstood: false,
+    slVerified: false,
+    brokerRawEcn: false,
+  });
+
+  const account = telemetry?.account;
+  const isEmergency = telemetry?.isEmergencyStopped || telemetry?.circuitBreakerTripped;
+
+  const handleSaveName = () => {
+    if (editedName.trim()) {
+      onRenameApp(editedName.trim());
+    }
+    setIsEditingName(false);
+  };
+
+  const handleConfirmLiveMode = async () => {
+    if (!liveChecklist.demoTested || !liveChecklist.riskUnderstood || !liveChecklist.slVerified) {
+      alert('You must acknowledge all mandatory safety checklist requirements before enabling live trading.');
+      return;
+    }
+    try {
+      await onModeChange('LIVE_STRICT_AUTH', liveKeyInput.trim());
+      setShowLiveAuthModal(false);
+      setLiveKeyInput('');
+    } catch (err: any) {
+      alert(err.message || 'Live authorization failed.');
+    }
+  };
+
   return (
-    <header className="flex items-center justify-between gap-6 px-6 py-3 bg-[#0E131F] border-b border-slate-800 text-slate-100 select-none">
-      {/* Zone 1: Single text element wordmark */}
-      <div className="flex items-center gap-2.5 shrink-0">
-        <div className="w-7 h-7 rounded-md bg-sky-500/10 border border-sky-400/30 flex items-center justify-center text-sky-400">
-          <Terminal className="w-4 h-4" />
+    <>
+      <header className="sticky top-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-4 lg:px-6 py-2.5 transition-all">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Left: App Identity & Status */}
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-cyan-500 via-indigo-600 to-blue-700 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-400/40">
+              <Cpu className="w-5 h-5 text-white" />
+            </div>
+
+            <div className="flex items-center gap-2">
+              {isEditingName ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={editedName}
+                    onChange={(e) => setEditedName(e.target.value)}
+                    className="bg-slate-900 border border-cyan-500/60 rounded px-2 py-0.5 text-sm font-bold text-white focus:outline-none"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveName}
+                    className="p-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white"
+                    title="Save name"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 group cursor-pointer" onClick={() => setIsEditingName(true)}>
+                  <h1 className="text-base lg:text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
+                    {appName}
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60 font-mono font-medium">
+                      MT5 Scalper
+                    </span>
+                  </h1>
+                  <Edit2 className="w-3 h-3 text-slate-500 group-hover:text-cyan-400 transition-colors opacity-0 group-hover:opacity-100" />
+                </div>
+              )}
+            </div>
+
+            {/* Connection & Terminal Health Pill */}
+            <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-800 text-xs font-mono">
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-900 border border-slate-800">
+                <span className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isEmergency ? 'bg-red-400' : 'bg-emerald-400'}`} />
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${isEmergency ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                </span>
+                <span className="text-slate-300 font-medium">
+                  {isEmergency ? 'CIRCUIT BREAKER' : 'MT5 LINKED'}
+                </span>
+                <span className="text-slate-500">|</span>
+                <span className="text-cyan-400 font-mono">{telemetry?.connection?.pingMs ?? 24}ms</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Center: Live Account Telemetry Ribbon */}
+          {account && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:flex items-center gap-2 lg:gap-4 text-xs font-mono bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-sans">Account Equity</span>
+                <span className="font-bold text-white text-sm">
+                  ${account.equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              <div className="border-l border-slate-800 pl-2 lg:pl-3">
+                <span className="text-slate-400 block text-[10px] uppercase font-sans">Free Margin</span>
+                <span className="font-semibold text-slate-200">
+                  ${account.freeMargin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              <div className="border-l border-slate-800 pl-2 lg:pl-3">
+                <span className="text-slate-400 block text-[10px] uppercase font-sans">Daily PnL</span>
+                <span className={`font-bold ${account.dailyPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {account.dailyPnL >= 0 ? '+' : ''}${account.dailyPnL.toFixed(2)} ({account.dailyPnLPct >= 0 ? '+' : ''}{account.dailyPnLPct.toFixed(2)}%)
+                </span>
+              </div>
+
+              <div className="border-l border-slate-800 pl-2 lg:pl-3">
+                <span className="text-slate-400 block text-[10px] uppercase font-sans">Peak Drawdown</span>
+                <span className={`font-semibold ${account.currentDrawdownPct > 2.5 ? 'text-amber-400' : 'text-slate-200'}`}>
+                  {account.currentDrawdownPct.toFixed(2)}% <span className="text-slate-500 text-[10px]">/ 5.0%</span>
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Right: Operational Mode Selector & Emergency Stop */}
+          <div className="flex items-center gap-2">
+            {/* Mode Selector */}
+            <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-xs font-medium">
+              <button
+                onClick={() => onModeChange('DEMO_EXECUTION')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  telemetry?.mode === 'DEMO_EXECUTION'
+                    ? 'bg-cyan-600 text-white font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Demo Active
+              </button>
+
+              <button
+                onClick={() => onModeChange('SCAN_ONLY')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  telemetry?.mode === 'SCAN_ONLY'
+                    ? 'bg-indigo-600 text-white font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Scan Only
+              </button>
+
+              <button
+                onClick={() => setShowLiveAuthModal(true)}
+                className={`px-2.5 py-1 rounded-md flex items-center gap-1 transition-all ${
+                  telemetry?.mode === 'LIVE_STRICT_AUTH'
+                    ? 'bg-rose-600 text-white font-bold shadow-sm ring-1 ring-rose-400'
+                    : 'text-slate-400 hover:text-rose-400'
+                }`}
+              >
+                <Lock className="w-3 h-3" />
+                Live Mode
+              </button>
+            </div>
+
+            {/* Emergency Stop Button */}
+            {isEmergency ? (
+              <button
+                onClick={onResetEmergencyStop}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition-all"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                Reset Emergency Stop
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowEmergencyModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white font-bold text-xs shadow-lg shadow-rose-600/20 ring-1 ring-rose-500/50 hover:scale-[1.02] transition-all"
+              >
+                <Power className="w-3.5 h-3.5" />
+                Emergency Stop
+              </button>
+            )}
+          </div>
         </div>
-        <span className="text-base font-bold tracking-tight text-white whitespace-nowrap shrink-0">
-          DeskPilot AI
-        </span>
-      </div>
+      </header>
 
-      {/* Zone 2: Clean single-line navigation links */}
-      <nav className="hidden lg:flex items-center gap-5 text-xs font-semibold text-slate-400 overflow-x-auto">
-        <button
-          onClick={() => onSelectApp('vscode')}
-          className={`hover:text-white transition-colors whitespace-nowrap shrink-0 pb-0.5 border-b-2 ${
-            activeApp === 'vscode'
-              ? 'text-sky-400 border-sky-400'
-              : 'border-transparent'
-          }`}
-        >
-          VS Code Studio
-        </button>
-        <button
-          onClick={() => onSelectApp('excel')}
-          className={`hover:text-white transition-colors whitespace-nowrap shrink-0 pb-0.5 border-b-2 ${
-            activeApp === 'excel'
-              ? 'text-emerald-400 border-emerald-400'
-              : 'border-transparent'
-          }`}
-        >
-          Excel Intelligence
-        </button>
-        <button
-          onClick={() => onSelectApp('trading_chart')}
-          className={`hover:text-white transition-colors whitespace-nowrap shrink-0 pb-0.5 border-b-2 ${
-            activeApp === 'trading_chart'
-              ? 'text-amber-400 border-amber-400'
-              : 'border-transparent'
-          }`}
-        >
-          Trading Chart Analysis
-        </button>
-        <button
-          onClick={() => onSelectApp('screenshot_drop')}
-          className={`hover:text-white transition-colors whitespace-nowrap shrink-0 pb-0.5 border-b-2 ${
-            activeApp === 'screenshot_drop'
-              ? 'text-cyan-400 border-cyan-400'
-              : 'border-transparent'
-          }`}
-        >
-          Screenshot OCR & Drop
-        </button>
-        <button
-          onClick={() => onSelectApp('projects_registry')}
-          className={`hover:text-white transition-colors whitespace-nowrap shrink-0 pb-0.5 border-b-2 ${
-            activeApp === 'projects_registry'
-              ? 'text-purple-400 border-purple-400'
-              : 'border-transparent'
-          }`}
-        >
-          Projects Registry
-        </button>
-        <button
-          onClick={() => onSelectApp('live_screen')}
-          className={`hover:text-white transition-colors whitespace-nowrap shrink-0 pb-0.5 border-b-2 ${
-            activeApp === 'live_screen'
-              ? 'text-rose-400 border-rose-400'
-              : 'border-transparent'
-          }`}
-        >
-          Live Screen
-        </button>
-        <button
-          onClick={onOpenPythonModal}
-          className="hover:text-white transition-colors whitespace-nowrap shrink-0 text-slate-400"
-        >
-          Python & Tests
-        </button>
-      </nav>
+      {/* Emergency Stop Modal */}
+      {showEmergencyModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/60 rounded-xl max-w-md w-full p-6 shadow-2xl shadow-rose-950/50 space-y-4">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="p-2.5 rounded-lg bg-rose-950 border border-rose-800">
+                <ShieldAlert className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Emergency Stop Confirmation</h3>
+                <p className="text-xs text-rose-300">Cease trading operations immediately</p>
+              </div>
+            </div>
 
-      {/* Zone 3: 1 primary action */}
-      <div className="flex items-center gap-3 shrink-0">
-        <button
-          onClick={onDownloadZip}
-          className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-sky-400 hover:bg-sky-300 rounded-md transition-colors whitespace-nowrap shrink-0 shadow-sm"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>Download Windows App .zip</span>
-        </button>
-      </div>
-    </header>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              Activating Emergency Stop will trip the local circuit breaker and instruct the MT5 Expert Advisor to immediately halt. Choose an execution policy:
+            </p>
+
+            <div className="space-y-2 text-xs">
+              <label
+                onClick={() => setEmergencyAction('HALT_AND_LIQUIDATE')}
+                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                  emergencyAction === 'HALT_AND_LIQUIDATE'
+                    ? 'bg-rose-950/40 border-rose-500 text-white'
+                    : 'bg-slate-800/40 border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="emergencyAction"
+                  checked={emergencyAction === 'HALT_AND_LIQUIDATE'}
+                  onChange={() => setEmergencyAction('HALT_AND_LIQUIDATE')}
+                  className="mt-0.5 accent-rose-500"
+                />
+                <div>
+                  <span className="font-bold block text-sm">Halt & Liquidate All Positions (Recommended)</span>
+                  <span className="text-slate-400 text-xs">
+                    Instantly closes all EA-managed positions at market to eliminate ongoing market exposure.
+                  </span>
+                </div>
+              </label>
+
+              <label
+                onClick={() => setEmergencyAction('HALT_ENTRIES_ONLY')}
+                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                  emergencyAction === 'HALT_ENTRIES_ONLY'
+                    ? 'bg-amber-950/40 border-amber-500 text-white'
+                    : 'bg-slate-800/40 border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="emergencyAction"
+                  checked={emergencyAction === 'HALT_ENTRIES_ONLY'}
+                  onChange={() => setEmergencyAction('HALT_ENTRIES_ONLY')}
+                  className="mt-0.5 accent-amber-500"
+                />
+                <div>
+                  <span className="font-bold block text-sm">Halt New Entries Only</span>
+                  <span className="text-slate-400 text-xs">
+                    Existing open positions remain protected by their hard SL/TP and trailing rules, but zero new orders can open.
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setShowEmergencyModal(false)}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onEmergencyStop(emergencyAction);
+                  setShowEmergencyModal(false);
+                }}
+                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/30"
+              >
+                Confirm Emergency Stop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Trading Authorization Gate Modal */}
+      {showLiveAuthModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/60 rounded-xl max-w-lg w-full p-6 shadow-2xl shadow-amber-950/40 space-y-4">
+            <div className="flex items-center gap-3 text-amber-400">
+              <div className="p-2.5 rounded-lg bg-amber-950 border border-amber-800">
+                <AlertTriangle className="w-6 h-6 text-amber-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Live Execution Safety Gate</h3>
+                <p className="text-xs text-amber-300">Strict confirmation required for real capital deployment</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Live trading introduces real financial risk. A 100% account return is an aspirational milestone, not a guaranteed outcome. You must verify and check all mandatory safety prerequisites:
+            </p>
+
+            <div className="space-y-2 bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs">
+              <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={liveChecklist.demoTested}
+                  onChange={(e) => setLiveChecklist({ ...liveChecklist, demoTested: e.target.checked })}
+                  className="mt-0.5 accent-amber-500"
+                />
+                <span>I have completed at least 14 days of demo forward testing on MetaTrader 5 without abnormal errors.</span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={liveChecklist.riskUnderstood}
+                  onChange={(e) => setLiveChecklist({ ...liveChecklist, riskUnderstood: e.target.checked })}
+                  className="mt-0.5 accent-amber-500"
+                />
+                <span>I understand that conservative risk (0.5% - 0.75% per trade) is strictly enforced and minimum lots will be skipped if risk exceeds limits.</span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={liveChecklist.slVerified}
+                  onChange={(e) => setLiveChecklist({ ...liveChecklist, slVerified: e.target.checked })}
+                  className="mt-0.5 accent-amber-500"
+                />
+                <span>I confirm that every position must have a broker-validated stop-loss at entry.</span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={liveChecklist.brokerRawEcn}
+                  onChange={(e) => setLiveChecklist({ ...liveChecklist, brokerRawEcn: e.target.checked })}
+                  className="mt-0.5 accent-amber-500"
+                />
+                <span>I am using an ECN / Raw Spread account with low commission suitable for M5 scalping.</span>
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Authorization Key (Passphrase: <code className="text-amber-400 font-mono">AUTHORIZED_LIVE_APEX_2026</code>)
+              </label>
+              <input
+                type="text"
+                placeholder="Enter AUTHORIZED_LIVE_APEX_2026"
+                value={liveKeyInput}
+                onChange={(e) => setLiveKeyInput(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setShowLiveAuthModal(false)}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmLiveMode}
+                className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-xs shadow-lg shadow-amber-600/30"
+              >
+                Authorize Live Trading
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
