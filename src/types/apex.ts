@@ -64,6 +64,9 @@ export interface AccountMetrics {
   peakEquity: number;
   currentDrawdownPct: number;
   maxDrawdownPct: number;
+  connected?: boolean;
+  pingMs?: number;
+  lastSync?: string;
 }
 
 export interface GoldRiskConfig {

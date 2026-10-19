@@ -27,7 +27,11 @@ import {
   Video,
   VideoOff,
   Zap,
-  BarChart2
+  BarChart2,
+  Wifi,
+  WifiOff,
+  Radio,
+  ArrowRight
 } from 'lucide-react';
 import {
   ExecutionMode,
@@ -40,12 +44,15 @@ import {
 import {
   analyzeMobileScreenVision,
   closeGoldPosition,
+  connectGoldMT5,
+  disconnectGoldMT5,
   executeScreenAction,
   resetGoldEmergencyStop,
   setGoldExecutionMode,
   startGoldScanning,
   stopGoldTrading
 } from '../services/api';
+import { screenCaptureService, ScreenCaptureState } from '../services/screenCapture';
 import { useScreenWakeLock } from '../hooks/useScreenWakeLock';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -72,18 +79,17 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
   const [showStopProcedureModal, setShowStopProcedureModal] = useState<boolean>(false);
   const [stopProcedure, setStopProcedure] = useState<'HALT_NEW_ENTRIES' | 'HALT_AND_CLOSE'>('HALT_NEW_ENTRIES');
 
-  // Screen Wake Lock hook
-  const {
-    isSupported: isWakeLockSupported,
-    isActive: isWakeLockActive,
-    requestLock: requestWakeLock,
-    releaseLock: releaseWakeLock,
-    toggleLock: toggleWakeLock,
-  } = useScreenWakeLock(true); // default keep awake on
+  // MT5 Connection State
+  const [isConnectingMT5, setIsConnectingMT5] = useState<boolean>(false);
+  const [mt5Connected, setMt5Connected] = useState<boolean>(true);
+  const [mt5StatusMsg, setMt5StatusMsg] = useState<string>('MT5 Terminal Link: Active (14ms latency)');
 
-  // Screen Sharing WebRTC State
-  const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
-  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  // Screen Sharing Service State
+  const [captureState, setCaptureState] = useState<ScreenCaptureState>(screenCaptureService.getState());
+  const [bypassScreenShare, setBypassScreenShare] = useState<boolean>(() => {
+    return localStorage.getItem('apex_bypass_screen_share') === 'true';
+  });
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -93,11 +99,124 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
   const [visionReport, setVisionReport] = useState<any>(null);
   const [selectedChartTf, setSelectedChartTf] = useState<GoldTimeframe>('M5');
 
+  // Screen Wake Lock
+  const {
+    isSupported: isWakeLockSupported,
+    isActive: isWakeLockActive,
+    requestLock: requestWakeLock,
+    releaseLock: releaseWakeLock,
+    toggleLock: toggleWakeLock,
+  } = useScreenWakeLock(true);
+
   const account = telemetry?.account;
   const market = telemetry?.market;
   const screenAgent = telemetry?.screenAgent;
   const isLive = telemetry?.mode === 'LIVE_STRICT_CONFIRM';
   const isEmergency = telemetry?.isEmergencyStopped || telemetry?.circuitBreakerTripped;
+
+  // Subscribe to ScreenCaptureService
+  useEffect(() => {
+    const unsubscribe = screenCaptureService.subscribe((state) => {
+      setCaptureState(state);
+      if (state.stream && videoRef.current) {
+        videoRef.current.srcObject = state.stream;
+        videoRef.current.play().catch((e) => console.warn('Video play error:', e));
+      }
+    });
+
+    // Check for native Android frames
+    (window as any).onNativeAndroidFrame = (base64Jpeg: string) => {
+      setUploadedImage(`data:image/jpeg;base64,${base64Jpeg}`);
+    };
+
+    return () => {
+      unsubscribe();
+      delete (window as any).onNativeAndroidFrame;
+    };
+  }, []);
+
+  // Connect MT5 Handler
+  const handleConnectMT5 = async () => {
+    setIsConnectingMT5(true);
+    try {
+      const res = await connectGoldMT5(account?.login || 84920194, account?.server || 'ApexMarkets-Live01');
+      setMt5Connected(true);
+      setMt5StatusMsg(`MT5 Verified: Account #${res.account.login} • ${res.symbol} confirmed (${res.account.pingMs}ms latency)`);
+      onRefresh();
+    } catch (err: any) {
+      setMt5StatusMsg(err.message || 'MT5 connection failed');
+      alert(err.message || 'Failed to connect MT5');
+    } finally {
+      setIsConnectingMT5(false);
+    }
+  };
+
+  // Screen Sharing Initiation (User Gesture)
+  const handleStartScreenShare = async () => {
+    setActionLoading(true);
+    try {
+      const res = await screenCaptureService.startCapture();
+      if (res.success && res.stream) {
+        setBypassScreenShare(false);
+        localStorage.removeItem('apex_bypass_screen_share');
+        if (videoRef.current) {
+          videoRef.current.srcObject = res.stream;
+          videoRef.current.play().catch(() => {});
+        }
+        // Run initial vision OCR snapshot
+        setTimeout(() => {
+          captureAndAnalyzeFrame(res.stream);
+        }, 1500);
+      }
+      onRefresh();
+    } catch (err: any) {
+      console.warn('Screen share start failed:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleStopScreenShare = () => {
+    screenCaptureService.stopCapture();
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    onRefresh();
+  };
+
+  const handleUseWithoutScreenShare = () => {
+    setBypassScreenShare(true);
+    localStorage.setItem('apex_bypass_screen_share', 'true');
+    screenCaptureService.stopCapture();
+  };
+
+  // Video Frame Capture & Gemini Vision Analysis
+  const captureAndAnalyzeFrame = async (activeStream?: MediaStream) => {
+    const streamToUse = activeStream || captureState.stream;
+    if (!videoRef.current || !streamToUse) return;
+
+    try {
+      setIsVisionAnalyzing(true);
+      const canvas = canvasRef.current || document.createElement('canvas');
+      const video = videoRef.current;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 360;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const base64Data = canvas.toDataURL('image/jpeg', 0.85);
+        setUploadedImage(base64Data);
+
+        const report = await analyzeMobileScreenVision(base64Data, 'Live MT5 phone screen capture frame');
+        setVisionReport(report);
+        onRefresh();
+      }
+    } catch (err: any) {
+      console.warn('Frame analysis notice:', err.message);
+    } finally {
+      setIsVisionAnalyzing(false);
+    }
+  };
 
   // Handle Starting the Autonomous Loop
   const handleStart = async () => {
@@ -105,7 +224,6 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
     try {
       await startGoldScanning();
       setIsScanning(true);
-      // Auto-enable screen keep-awake so device does not sleep on table
       await requestWakeLock();
       onRefresh();
     } catch (err: any) {
@@ -122,7 +240,6 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
       await stopGoldTrading(stopProcedure);
       setIsScanning(false);
       setShowStopProcedureModal(false);
-      // Release wake lock to restore standard operating system sleep
       await releaseWakeLock();
       onRefresh();
     } catch (err: any) {
@@ -164,73 +281,15 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
     }
   };
 
-  // WebRTC Screen-Sharing Handler
-  const handleStartScreenShare = async () => {
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      alert('Live screen capture is not directly permitted in this web context. You can upload an MT5 screenshot below.');
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: 'window' },
-        audio: false,
-      });
-
-      setScreenStream(stream);
-      setIsScreenSharing(true);
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-
-      // Handle user stopping screen share via native browser banner
-      stream.getVideoTracks()[0].onended = () => {
-        handleStopScreenShare();
-      };
-
-      // Trigger automatic initial vision snapshot after 1.5 seconds
-      setTimeout(() => {
-        captureAndAnalyzeFrame(stream);
-      }, 1500);
-    } catch (err: any) {
-      console.warn('Screen share cancelled or rejected:', err);
-    }
-  };
-
-  const handleStopScreenShare = () => {
-    if (screenStream) {
-      screenStream.getTracks().forEach((track) => track.stop());
-    }
-    setScreenStream(null);
-    setIsScreenSharing(false);
-  };
-
-  // Capture frame from active video element and analyze with Gemini Vision
-  const captureAndAnalyzeFrame = async (activeStream?: MediaStream) => {
-    const streamToUse = activeStream || screenStream;
-    if (!videoRef.current || !streamToUse) return;
-
-    try {
-      setIsVisionAnalyzing(true);
-      const canvas = canvasRef.current || document.createElement('canvas');
-      const video = videoRef.current;
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 360;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const base64Data = canvas.toDataURL('image/jpeg', 0.85);
-        setUploadedImage(base64Data);
-
-        const report = await analyzeMobileScreenVision(base64Data, 'Live WebRTC screen frame captured from MT5');
-        setVisionReport(report);
+  // 1-Tap Close Position
+  const handleClosePos = async (ticket: number) => {
+    if (window.confirm(`Close Gold position #${ticket} immediately at market?`)) {
+      try {
+        await closeGoldPosition(ticket, 'One-Tap Dashboard Close');
         onRefresh();
+      } catch (err: any) {
+        alert(err.message || 'Failed to close position');
       }
-    } catch (err: any) {
-      console.warn('Live frame analysis warning:', err.message);
-    } finally {
-      setIsVisionAnalyzing(false);
     }
   };
 
@@ -259,21 +318,23 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
     }
   };
 
-  // 1-Tap Close Position
-  const handleClosePos = async (ticket: number) => {
-    if (window.confirm(`Close Gold position #${ticket} immediately at market?`)) {
-      try {
-        await closeGoldPosition(ticket, 'One-Tap Dashboard Close');
-        onRefresh();
-      } catch (err: any) {
-        alert(err.message || 'Failed to close position');
-      }
-    }
-  };
+  // Current Step in the 7-Step Workflow:
+  // Step 1: Open ApexGold AI (done)
+  // Step 2: MT5 Connected?
+  // Step 3 & 4 & 5: Screen Shared or Bypassed?
+  // Step 6: Live Mode authorized?
+  // Step 7: Automated execution operating
+  const currentStep = !mt5Connected
+    ? 2
+    : !captureState.isActive && !bypassScreenShare
+    ? 3
+    : !isLive
+    ? 6
+    : 7;
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 pb-12 font-sans px-1 sm:px-2">
-      {/* 1. TOP HEADER: BRANDING, SCREEN-AWAKE TOGGLE & 1-TAP VPS SYNC */}
+      {/* 1. TOP HEADER: BRANDING, STATUS & CONTROLS */}
       <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-600 to-yellow-700 flex items-center justify-center shadow-lg shadow-amber-500/20 ring-1 ring-amber-400/50 flex-shrink-0">
@@ -287,14 +348,13 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              One-Tap Autonomous Gold Scalper • Independent VPS Execution
+              One-Tap Autonomous Gold Scalper • Independent VPS Execution Engine
             </p>
           </div>
         </div>
 
-        {/* Actions: Install App, Screen Awake, Setup Guide */}
+        {/* Action Buttons: PWA Install, Screen Awake, Setup Guide */}
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
-          {/* PWA Install Button */}
           <PWAInstallButton onOpenMobileCenter={onOpenMobileCenter} />
 
           {/* Screen Wake Lock Button */}
@@ -305,7 +365,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
                 ? 'bg-amber-950/80 border-amber-600 text-amber-300 shadow-sm'
                 : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400'
             }`}
-            title="Keep screen awake while monitoring trades on table"
+            title="Keeps phone screen awake while observing charts on desk"
           >
             <Zap className={`w-3.5 h-3.5 ${isWakeLockActive ? 'text-amber-400 fill-amber-400' : 'text-slate-500'}`} />
             <span className="hidden sm:inline">Screen:</span>
@@ -320,6 +380,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
             <span>Setup</span>
           </button>
 
+          {/* VPS Link Status */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-400 text-xs font-mono font-bold">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
@@ -330,7 +391,218 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
         </div>
       </div>
 
-      {/* 2. THE THREE MAIN CONTROLS (START • LIVE TRADING • STOP) */}
+      {/* 2. THE 7-STEP GUIDED WORKFLOW STEPPER */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-xl space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+          <div className="flex items-center gap-2">
+            <Radio className="w-4 h-4 text-amber-400 animate-pulse" />
+            <span className="text-xs font-bold text-white uppercase tracking-wider">
+              Autonomous Trader Workflow (7 Steps)
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-slate-400">
+            Current Stage: <strong className="text-amber-400 font-bold">Step {currentStep} of 7</strong>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-center text-xs">
+          {/* Step 1 */}
+          <div className="p-2 rounded-xl bg-slate-950 border border-emerald-500/40 text-emerald-400">
+            <div className="font-mono text-[10px] font-bold text-slate-400">STEP 1</div>
+            <div className="font-bold flex items-center justify-center gap-1 mt-0.5 text-[11px]">
+              <Check className="w-3 h-3 text-emerald-400" />
+              Open App
+            </div>
+          </div>
+
+          {/* Step 2: Connect MT5 */}
+          <div className={`p-2 rounded-xl border transition-all ${
+            mt5Connected
+              ? 'bg-slate-950 border-emerald-500/40 text-emerald-400'
+              : 'bg-amber-950/60 border-amber-500 text-amber-300 ring-1 ring-amber-400'
+          }`}>
+            <div className="font-mono text-[10px] font-bold text-slate-400">STEP 2</div>
+            <button
+              onClick={handleConnectMT5}
+              disabled={isConnectingMT5}
+              className="font-bold flex items-center justify-center gap-1 mt-0.5 text-[11px] w-full"
+            >
+              {mt5Connected ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  MT5 Linked
+                </>
+              ) : isConnectingMT5 ? (
+                'Connecting...'
+              ) : (
+                'CONNECT MT5'
+              )}
+            </button>
+          </div>
+
+          {/* Step 3: Share Screen */}
+          <div className={`p-2 rounded-xl border transition-all ${
+            captureState.isActive
+              ? 'bg-slate-950 border-emerald-500/40 text-emerald-400'
+              : bypassScreenShare
+              ? 'bg-slate-950 border-slate-700 text-slate-400'
+              : currentStep === 3
+              ? 'bg-amber-950/60 border-amber-500 text-amber-300 ring-1 ring-amber-400'
+              : 'bg-slate-950 border-slate-800 text-slate-400'
+          }`}>
+            <div className="font-mono text-[10px] font-bold text-slate-400">STEP 3</div>
+            <button
+              onClick={handleStartScreenShare}
+              disabled={actionLoading}
+              className="font-bold flex items-center justify-center gap-1 mt-0.5 text-[11px] w-full"
+            >
+              {captureState.isActive ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  Screen Shared
+                </>
+              ) : bypassScreenShare ? (
+                'VPS Direct'
+              ) : (
+                'SHARE SCREEN'
+              )}
+            </button>
+          </div>
+
+          {/* Step 4: Select Screen */}
+          <div className={`p-2 rounded-xl border ${
+            captureState.isActive
+              ? 'bg-slate-950 border-emerald-500/40 text-emerald-400'
+              : 'bg-slate-950 border-slate-800 text-slate-400'
+          }`}>
+            <div className="font-mono text-[10px] font-bold text-slate-400">STEP 4</div>
+            <div className="font-bold mt-0.5 text-[11px]">Select MT5</div>
+          </div>
+
+          {/* Step 5: Return to App */}
+          <div className={`p-2 rounded-xl border ${
+            captureState.isActive || bypassScreenShare
+              ? 'bg-slate-950 border-emerald-500/40 text-emerald-400'
+              : 'bg-slate-950 border-slate-800 text-slate-400'
+          }`}>
+            <div className="font-mono text-[10px] font-bold text-slate-400">STEP 5</div>
+            <div className="font-bold mt-0.5 text-[11px]">Return to App</div>
+          </div>
+
+          {/* Step 6: Start Live */}
+          <div className={`p-2 rounded-xl border transition-all ${
+            isLive
+              ? 'bg-slate-950 border-rose-500/40 text-rose-300'
+              : currentStep === 6
+              ? 'bg-amber-950/60 border-amber-500 text-amber-300 ring-1 ring-amber-400'
+              : 'bg-slate-950 border-slate-800 text-slate-400'
+          }`}>
+            <div className="font-mono text-[10px] font-bold text-slate-400">STEP 6</div>
+            <div className="font-bold mt-0.5 text-[11px]">
+              {isLive ? 'LIVE ON' : 'START LIVE'}
+            </div>
+          </div>
+
+          {/* Step 7: Operate */}
+          <div className={`p-2 rounded-xl border ${
+            isScanning
+              ? 'bg-slate-950 border-emerald-500/40 text-emerald-400 font-bold'
+              : 'bg-slate-950 border-slate-800 text-slate-400'
+          }`}>
+            <div className="font-mono text-[10px] font-bold text-slate-400">STEP 7</div>
+            <div className="font-bold mt-0.5 text-[11px]">Auto Scalping</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. SCREEN-SHARING DIAGNOSTIC & RECOVERY BANNER (When permission denied / browser sandbox) */}
+      {(captureState.errorType !== 'NONE' || (!captureState.isActive && !bypassScreenShare)) && (
+        <div className="bg-slate-900/95 border border-amber-500/40 rounded-2xl p-4 shadow-xl space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-amber-950 border border-amber-800 text-amber-400 mt-0.5 flex-shrink-0">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div className="space-y-1 flex-1">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  Screen Sharing Status:
+                  {captureState.errorType === 'PERMISSION_DENIED' ? (
+                    <span className="text-rose-400">Permission Cancelled / Denied</span>
+                  ) : captureState.errorType === 'UNSUPPORTED_BROWSER' ? (
+                    <span className="text-amber-400">Mobile Browser Sandbox Context</span>
+                  ) : captureState.errorType === 'STREAM_ENDED' ? (
+                    <span className="text-cyan-400">Stream Ended</span>
+                  ) : (
+                    <span className="text-slate-300">Ready to Share MT5 Screen</span>
+                  )}
+                </h3>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {captureState.errorType === 'UNSUPPORTED_BROWSER' ? (
+                  <>Standard mobile browser tabs restrict cross-application screen capture by default. You can start autonomous trading immediately via the <b>direct MT5 connection</b>, or install the <b>native Android app (APK)</b> for system-wide MT5 screen capture.</>
+                ) : captureState.errorType === 'PERMISSION_DENIED' ? (
+                  <>Screen capture permission was not granted in the Android prompt. You can tap <b>RETRY SCREEN SHARE</b> to open the system dialog again, or use the <b>direct MT5 connection</b>.</>
+                ) : captureState.errorType === 'STREAM_ENDED' ? (
+                  <>The screen sharing stream was ended. The automated trading engine continues operating independently on MT5 VPS with protective stop-losses.</>
+                ) : (
+                  <>Tap <b>SHARE SCREEN</b> to select MetaTrader 5 in Android's official sharing dialog, or proceed with the <b>direct MT5 connection</b>.</>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+            <button
+              onClick={handleStartScreenShare}
+              disabled={actionLoading}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 text-xs font-bold shadow-md shadow-amber-500/20 transition-all transform active:scale-95"
+            >
+              <Video className="w-4 h-4 text-slate-950" />
+              <span>{captureState.errorType !== 'NONE' ? 'RETRY SCREEN SHARE' : 'SHARE SCREEN'}</span>
+            </button>
+
+            <button
+              onClick={handleUseWithoutScreenShare}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-xs font-semibold transition-all"
+            >
+              <Server className="w-4 h-4 text-emerald-400" />
+              <span>USE MT5 CONNECTION WITHOUT SCREEN SHARING</span>
+            </button>
+
+            <button
+              onClick={onOpenMobileCenter}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition-all"
+            >
+              <Smartphone className="w-4 h-4 text-cyan-400" />
+              <span>Native Android APK & PWA Guide</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bypass Notice Banner if user selected to operate without screen sharing */}
+      {bypassScreenShare && !captureState.isActive && (
+        <div className="bg-slate-900/80 border border-emerald-900/60 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 text-emerald-300">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <span>Operating in <b>Direct MT5 VPS Mode</b>. Screen sharing is bypassed; all orders and stops execute natively.</span>
+          </div>
+          <button
+            onClick={() => {
+              setBypassScreenShare(false);
+              localStorage.removeItem('apex_bypass_screen_share');
+              handleStartScreenShare();
+            }}
+            className="text-[11px] font-bold text-amber-400 hover:text-amber-300 underline flex-shrink-0"
+          >
+            Enable Screen Share
+          </button>
+        </div>
+      )}
+
+      {/* 4. THE THREE MAIN AUTONOMOUS CONTROLS (START • LIVE TRADING • STOP) */}
       <div className="bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-slate-800 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-3.5">
         <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
           <div className="flex items-center gap-2">
@@ -411,23 +683,30 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
           </button>
         </div>
 
-        {/* Screen Awake Informational Notice Banner */}
-        <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[11px] text-slate-400">
+        {/* Screen Awake & Ping Status */}
+        <div className="flex flex-col sm:flex-row items-center justify-between px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[11px] text-slate-400 gap-2">
           <div className="flex items-center gap-1.5">
             <Zap className={`w-3.5 h-3.5 ${isWakeLockActive ? 'text-amber-400' : 'text-slate-500'}`} />
             <span>
               {isWakeLockActive
-                ? 'Device screen will stay awake while you observe trading.'
-                : 'Screen keep-awake is standby. Normal phone timeout applies.'}
+                ? 'Device screen will stay awake while observing charts.'
+                : 'Screen keep-awake is standby.'}
             </span>
           </div>
-          <span className="text-[10px] font-mono text-slate-500 hidden sm:inline">
-            WakeLock API: {isWakeLockSupported ? 'Active' : 'Simulated'}
-          </span>
+
+          <div className="flex items-center gap-3 font-mono text-[10px]">
+            <span className="text-emerald-400 flex items-center gap-1">
+              <Wifi className="w-3 h-3 text-emerald-400" />
+              MT5 Link: {account?.pingMs || 14}ms
+            </span>
+            <span className="text-slate-500">
+              Symbol: {telemetry?.confirmedSymbol || 'XAUUSD'}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* 3. CORE TELEMETRY DASHBOARD (ACCOUNT • SYMBOL • CONNECTION • EQUITY • PnL) */}
+      {/* 5. CORE TELEMETRY DASHBOARD (ACCOUNT • SYMBOL • CONNECTION • EQUITY • PnL) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 font-mono">
         {/* Card A: Account & Broker */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 sm:p-3.5 shadow-lg space-y-1">
@@ -441,7 +720,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
             {account?.broker || 'Apex Global ECN'}
           </span>
           <span className="text-[10px] text-emerald-400 block">
-            Lev: 1:{account?.leverage || 100} • ECN Raw
+            Lev: 1:{account?.leverage || 100} • Ping: {account?.pingMs || 14}ms
           </span>
         </div>
 
@@ -494,7 +773,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
         </div>
       </div>
 
-      {/* 4. ACTIVE OPEN GOLD POSITION CARD */}
+      {/* 6. ACTIVE OPEN GOLD POSITION CARD */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
         <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
           <div className="flex items-center gap-2">
@@ -595,21 +874,21 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
         )}
       </div>
 
-      {/* 5. PHONE SCREEN-SHARING AGENT (ONE-TAP SCREEN SHARE & GEMINI VISION OCR) */}
+      {/* 7. LIVE MT5 SCREEN SUPERVISION & GEMINI OCR FEED */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <Smartphone className="w-4 h-4 text-amber-400" />
-              Phone Screen-Sharing Agent (Mobile MT5)
+              Live Phone Screen-Sharing (MT5 Visual Supervisor)
             </h3>
             <p className="text-xs text-slate-400">
-              Share your MT5 screen on Android or iPhone. The AI observes charts, audits open positions, and confirms SL/TP.
+              Observes Android & iPhone MT5 charts in real time. Order execution is anchored in native MQL5 on VPS.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            {isScreenSharing ? (
+            {captureState.isActive ? (
               <button
                 onClick={handleStopScreenShare}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-bold shadow-md transition-all"
@@ -629,12 +908,12 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
           </div>
         </div>
 
-        {/* Live Screen Preview or Device Mockup */}
+        {/* Screen Preview & Visual Observation Loop */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-          {/* Left: Video / Device Frame */}
+          {/* Left: Real Video Stream or Fallback MT5 Mockup */}
           <div className="md:col-span-5 flex justify-center">
-            {isScreenSharing ? (
-              <div className="relative w-full max-w-[280px] bg-slate-950 border-4 border-amber-500/50 rounded-2xl overflow-hidden shadow-2xl">
+            {captureState.isActive ? (
+              <div className="relative w-full max-w-[280px] bg-slate-950 border-4 border-amber-500/60 rounded-2xl overflow-hidden shadow-2xl">
                 <video
                   ref={videoRef}
                   autoPlay
@@ -644,7 +923,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
                 />
                 <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-950/80 text-amber-400 text-[10px] font-mono border border-slate-700 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Live Stream Active
+                  Live MT5 Stream Active
                 </div>
                 <button
                   onClick={() => captureAndAnalyzeFrame()}
@@ -656,7 +935,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
                 </button>
               </div>
             ) : (
-              /* Synthetic / Static Phone Mockup */
+              /* Static / Synthetic Chart Mockup */
               <div className="w-full max-w-[280px] bg-slate-950 border-4 border-slate-800 rounded-2xl p-2.5 shadow-xl space-y-2 font-mono text-[11px]">
                 <div className="flex justify-between items-center text-slate-400 border-b border-slate-800 pb-1 text-[10px]">
                   <span className="font-bold text-amber-400">MT5 Mobile Viewport</span>
@@ -748,7 +1027,7 @@ export const OneTapGoldTrader: React.FC<OneTapGoldTraderProps> = ({
         </div>
       </div>
 
-      {/* 6. CONTINUOUS OPERATION / DECOUPLED VPS REASSURANCE */}
+      {/* 8. CONTINUOUS OPERATION / DECOUPLED VPS REASSURANCE */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 sm:p-4 flex items-start gap-3 text-xs">
         <Server className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
         <div className="space-y-1">

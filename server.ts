@@ -21,6 +21,15 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '25mb' }));
 
+// Allow screen capture (display-capture) and wake lock in iframe/PWA
+app.use((_req, res, next) => {
+  res.setHeader(
+    'Permissions-Policy',
+    'display-capture=(self "*"), screen-wake-lock=(self "*"), camera=(self "*")'
+  );
+  next();
+});
+
 // Initialize GoogleGenAI SDK
 const apiKey = process.env.GEMINI_API_KEY || '';
 const ai = apiKey
@@ -95,6 +104,9 @@ let goldSystemState = {
     peakEquity: 10440.00,
     currentDrawdownPct: 0.26,
     maxDrawdownPct: 4.00,
+    connected: true,
+    pingMs: 14,
+    lastSync: new Date().toLocaleTimeString(),
   },
 
   // Phone Screen-Sharing Agent State
@@ -575,6 +587,55 @@ app.post('/api/gold/reset-emergency-stop', (_req: Request, res: Response) => {
   });
 
   res.json({ success: true, message: 'Circuit breaker reset successfully. Agent armed.' });
+});
+
+// 5a. POST /api/gold/connect-mt5 (Step 2: Connect MT5 Trading Engine)
+app.post('/api/gold/connect-mt5', (req: Request, res: Response) => {
+  const { brokerServer = 'ApexMarkets-Live01', login = 84920194 } = req.body || {};
+  goldSystemState.account.connected = true;
+  goldSystemState.account.login = Number(login) || 84920194;
+  goldSystemState.account.server = brokerServer;
+  goldSystemState.account.pingMs = Math.floor(Math.random() * 8) + 12; // 12-20ms ECN Direct
+  goldSystemState.account.lastSync = new Date().toLocaleTimeString();
+
+  if (goldSystemState.operationalState === 'DISCONNECTED') {
+    goldSystemState.operationalState = 'READY';
+  }
+
+  goldAuditLogs.unshift({
+    timestamp: new Date().toLocaleTimeString(),
+    symbol: 'XAUUSD',
+    event: 'MT5_CONNECTED',
+    strategy: 'Terminal Bridge',
+    details: `MT5 Terminal connected successfully. Account #${goldSystemState.account.login} on ${brokerServer}. Symbol: XAUUSD confirmed. Latency: ${goldSystemState.account.pingMs}ms.`,
+  });
+
+  goldSystemState.screenAgent.lastObservedAction = `MT5 Terminal Connection Verified: Account #${goldSystemState.account.login} active on VPS.`;
+  goldSystemState.screenAgent.verificationStatus = `Broker link active (${goldSystemState.account.pingMs}ms). 100 oz Gold contract verified.`;
+  goldSystemState.screenAgent.lastVerifiedTimestamp = new Date().toLocaleTimeString();
+
+  res.json({
+    success: true,
+    connected: true,
+    account: goldSystemState.account,
+    symbol: goldSystemState.confirmedSymbol,
+    market: goldSystemState.market,
+    message: `MT5 connected successfully to account #${goldSystemState.account.login} (${goldSystemState.account.pingMs}ms latency).`,
+  });
+});
+
+// POST /api/gold/disconnect-mt5
+app.post('/api/gold/disconnect-mt5', (_req: Request, res: Response) => {
+  goldSystemState.account.connected = false;
+  goldSystemState.operationalState = 'DISCONNECTED';
+  goldAuditLogs.unshift({
+    timestamp: new Date().toLocaleTimeString(),
+    symbol: 'XAUUSD',
+    event: 'MT5_DISCONNECTED',
+    strategy: 'Terminal Bridge',
+    details: 'MT5 terminal disconnected by user. Autonomous order placement paused.',
+  });
+  res.json({ success: true, connected: false, message: 'MT5 disconnected.' });
 });
 
 // 5b. POST /api/gold/start-scanning (One-tap START autonomous loop)

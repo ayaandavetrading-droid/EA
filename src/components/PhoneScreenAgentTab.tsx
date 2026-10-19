@@ -15,8 +15,11 @@ import {
   Maximize2,
   Clock,
   UserCheck,
-  Check
+  Check,
+  Video,
+  VideoOff
 } from 'lucide-react';
+import { screenCaptureService, ScreenCaptureState } from '../services/screenCapture';
 import {
   GoldOperationalState,
   GoldPositionRecord,
@@ -48,6 +51,27 @@ export const PhoneScreenAgentTab: React.FC<PhoneScreenAgentTabProps> = ({
   const [userVisionNotes, setUserVisionNotes] = useState('');
   const [showAccountSwitchModal, setShowAccountSwitchModal] = useState(false);
   const [switchSuccessMsg, setSwitchSuccessMsg] = useState('');
+  const [captureState, setCaptureState] = useState<ScreenCaptureState>(screenCaptureService.getState());
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+
+  React.useEffect(() => {
+    const unsubscribe = screenCaptureService.subscribe((state) => {
+      setCaptureState(state);
+      if (state.stream && videoRef.current) {
+        videoRef.current.srcObject = state.stream;
+        videoRef.current.play().catch(() => {});
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleToggleScreenShare = async () => {
+    if (captureState.isActive) {
+      screenCaptureService.stopCapture();
+    } else {
+      await screenCaptureService.startCapture();
+    }
+  };
 
   // Handle Tab Switch inside Mobile Mockup
   const handleNavTab = async (tab: MobileTab) => {
@@ -172,6 +196,24 @@ export const PhoneScreenAgentTab: React.FC<PhoneScreenAgentTabProps> = ({
             <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
             Switch Account
           </button>
+
+          {captureState.isActive ? (
+            <button
+              onClick={handleToggleScreenShare}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-mono font-bold shadow-sm transition-all"
+            >
+              <VideoOff className="w-3.5 h-3.5" />
+              Stop Share
+            </button>
+          ) : (
+            <button
+              onClick={handleToggleScreenShare}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold shadow-sm transition-all"
+            >
+              <Video className="w-3.5 h-3.5" />
+              Share Screen
+            </button>
+          )}
         </div>
       </div>
 
@@ -220,7 +262,22 @@ export const PhoneScreenAgentTab: React.FC<PhoneScreenAgentTabProps> = ({
               </div>
             </div>
 
-            {/* Mobile Screen Main Canvas based on Active Tab */}
+            {/* Mobile Screen Main Canvas based on Active Tab or Live Screen Share */}
+            {captureState.isActive ? (
+              <div className="relative h-[360px] bg-slate-950 rounded-lg overflow-hidden flex flex-col justify-between">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover bg-slate-950"
+                />
+                <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-950/80 text-amber-400 text-[10px] font-mono border border-slate-700 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Live MT5 Video Stream
+                </div>
+              </div>
+            ) : (
             <div className="bg-slate-950 h-[360px] overflow-y-auto p-2 font-mono text-xs flex flex-col justify-between">
               {screenAgent.activeTab === 'CHART' && (
                 <div className="h-full flex flex-col justify-between">
@@ -364,6 +421,7 @@ export const PhoneScreenAgentTab: React.FC<PhoneScreenAgentTabProps> = ({
                 </div>
               )}
             </div>
+            )}
 
             {/* Mobile MT5 Bottom Navigation Bar */}
             <div className="bg-slate-900 rounded-b-xl px-1 py-1.5 grid grid-cols-5 gap-0.5 border-t border-slate-800 text-center text-[9px] font-sans">

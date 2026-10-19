@@ -54,6 +54,24 @@ export async function stopGoldTrading(procedure: 'HALT_NEW_ENTRIES' | 'HALT_AND_
   return res.json();
 }
 
+export async function connectGoldMT5(login?: number, brokerServer?: string): Promise<any> {
+  const res = await fetch('/api/gold/connect-mt5', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ login, brokerServer }),
+  });
+  if (!res.ok) throw new Error('Failed to connect MT5 terminal');
+  return res.json();
+}
+
+export async function disconnectGoldMT5(): Promise<any> {
+  const res = await fetch('/api/gold/disconnect-mt5', {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to disconnect MT5');
+  return res.json();
+}
+
 export async function triggerGoldEmergencyStop(action: 'HALT_AND_LIQUIDATE' | 'HALT_ENTRIES_ONLY' = 'HALT_AND_LIQUIDATE'): Promise<any> {
   const res = await fetch('/api/gold/emergency-stop', {
     method: 'POST',
