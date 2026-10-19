@@ -27,6 +27,35 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Ignore benign Vite HMR WebSocket disconnects in iframe dev environment -->
+    <script>
+      (function () {
+        const origConsoleError = console.error;
+        console.error = function (...args) {
+          if (args[0] && typeof args[0] === 'string' && (args[0].includes('[vite]') || args[0].includes('WebSocket') || args[0].includes('websocket'))) {
+            return;
+          }
+          if (args[0] && args[0] instanceof Error && (args[0].message.includes('WebSocket') || args[0].message.includes('[vite]'))) {
+            return;
+          }
+          origConsoleError.apply(console, args);
+        };
+        window.addEventListener('error', function (e) {
+          if (e.message && (e.message.includes('WebSocket') || e.message.includes('[vite]'))) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function (e) {
+          const reasonStr = String(e.reason && (e.reason.message || e.reason));
+          if (reasonStr.includes('WebSocket') || reasonStr.includes('[vite]')) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased font-sans select-none overflow-x-hidden min-h-screen">
     <div id="root"></div>
